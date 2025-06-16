@@ -43,32 +43,41 @@ if(OS_WINDOWS)
     NAMES websockets_static websockets libwebsockets
     PATHS 
       $ENV{LIBWEBSOCKETS_ROOT}/build/lib/Release
-      $ENV{LIBWEBSOCKETS_ROOT}/lib 
+      $ENV{LIBWEBSOCKETS_ROOT}/build/Release
+      $ENV{LIBWEBSOCKETS_ROOT}/build/lib
+      $ENV{LIBWEBSOCKETS_ROOT}/lib
       ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build/lib/Release
-      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/lib 
+      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build/Release
+      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build/lib
+      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/lib
       C:/libwebsockets/lib
+    PATH_SUFFIXES Release Debug
   )
 elseif(OS_MACOS)
-  # On macOS, check Homebrew paths and environment
-  execute_process(COMMAND brew --prefix OUTPUT_VARIABLE HOMEBREW_PREFIX OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+  # On macOS, libwebsockets should be built by Install-MacOSDeps.sh
+  # Check environment variable first
+  if(DEFINED ENV{LIBWEBSOCKETS_ROOT})
+    set(LIBWEBSOCKETS_ROOT "$ENV{LIBWEBSOCKETS_ROOT}")
+  else()
+    set(LIBWEBSOCKETS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets")
+  endif()
   
   find_path(
-    LIBWEBSOCKETS_INCLUDE_DIR 
-    NAMES libwebsockets.h 
-    PATHS 
-      $ENV{LIBWEBSOCKETS_ROOT}/include
-      ${HOMEBREW_PREFIX}/include
-      /opt/homebrew/include 
+    LIBWEBSOCKETS_INCLUDE_DIR
+    NAMES libwebsockets.h
+    PATHS
+      ${LIBWEBSOCKETS_ROOT}/include
+      /opt/homebrew/include
       /usr/local/include
   )
-
+  
   find_library(
-    LIBWEBSOCKETS_LIBRARY 
+    LIBWEBSOCKETS_LIBRARY
     NAMES websockets libwebsockets
-    PATHS 
-      $ENV{LIBWEBSOCKETS_ROOT}/lib
-      ${HOMEBREW_PREFIX}/lib
-      /opt/homebrew/lib 
+    PATHS
+      ${LIBWEBSOCKETS_ROOT}/build/lib
+      ${LIBWEBSOCKETS_ROOT}/lib
+      /opt/homebrew/lib
       /usr/local/lib
   )
 elseif(OS_LINUX)
@@ -135,8 +144,15 @@ target_include_directories(
 )
 
 # For Windows, also include the build directory for lws_config.h
-if(OS_WINDOWS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build")
-  target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build)
+if(OS_WINDOWS)
+  # First try the environment variable path
+  if(DEFINED ENV{LIBWEBSOCKETS_ROOT})
+    target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE $ENV{LIBWEBSOCKETS_ROOT}/build)
+  endif()
+  # Also try the local deps path
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build")
+    target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build)
+  endif()
 endif()
 
 # Platform-specific definitions

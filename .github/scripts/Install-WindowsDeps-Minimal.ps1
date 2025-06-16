@@ -75,6 +75,30 @@ try {
     # Build Release configuration
     cmake --build . --config Release
     
+    # Debug: Check what was actually built
+    Write-Host "Checking build output..."
+    $LibPath = Join-Path $LwsBuildDir "lib/Release"
+    if (Test-Path $LibPath) {
+        Write-Host "Contents of lib/Release:"
+        Get-ChildItem $LibPath | ForEach-Object { Write-Host "  $_" }
+    }
+    
+    $LibPath2 = Join-Path $LwsBuildDir "Release"
+    if (Test-Path $LibPath2) {
+        Write-Host "Contents of Release:"
+        Get-ChildItem $LibPath2 | ForEach-Object { Write-Host "  $_" }
+    }
+    
+    # Try to find the library anywhere in the build directory
+    Write-Host "Searching for libwebsockets library files..."
+    $LibFiles = Get-ChildItem -Path $LwsBuildDir -Recurse -Include "*.lib", "*.a" -ErrorAction SilentlyContinue
+    if ($LibFiles) {
+        Write-Host "Found library files:"
+        $LibFiles | ForEach-Object { Write-Host "  $($_.FullName)" }
+    } else {
+        Write-Host "WARNING: No library files found in build directory!"
+    }
+    
     # Verify that SQLite support is disabled in the generated config
     $ConfigFile = Join-Path $LwsBuildDir "lws_config.h"
     if (Test-Path $ConfigFile) {

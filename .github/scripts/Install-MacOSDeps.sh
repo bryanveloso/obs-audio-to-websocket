@@ -12,22 +12,65 @@ if ! command -v brew &> /dev/null; then
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 fi
 
-# Install libwebsockets
-echo "Installing libwebsockets..."
-brew install libwebsockets
-
 # Install nlohmann-json (if not already available through obs-deps)
 echo "Installing nlohmann-json..."
 brew install nlohmann-json || true
 
+# Build libwebsockets as universal binary since Homebrew only provides single-arch
+PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
+DEPS_DIR="${PROJECT_ROOT}/deps"
+LWS_DIR="${DEPS_DIR}/libwebsockets"
+
+echo "Building libwebsockets as universal binary..."
+mkdir -p "$DEPS_DIR"
+
+# Check if we need to rebuild
+if [ ! -f "${LWS_DIR}/build/lib/libwebsockets.a" ]; then
+    # Clean up any existing directory
+    if [ -d "$LWS_DIR" ]; then
+        rm -rf "$LWS_DIR"
+    fi
+    
+    cd "$DEPS_DIR"
+    
+    # Download libwebsockets
+    echo "Downloading libwebsockets..."
+    curl -L "https://github.com/warmcat/libwebsockets/archive/refs/tags/v4.3.3.tar.gz" -o libwebsockets.tar.gz
+    tar -xzf libwebsockets.tar.gz
+    mv libwebsockets-4.3.3 libwebsockets
+    rm libwebsockets.tar.gz
+    
+    cd libwebsockets
+    mkdir -p build
+    cd build
+    
+    # Configure for universal binary matching OBS requirements
+    echo "Configuring libwebsockets..."
+    cmake .. \
+        -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+        -DLWS_WITH_SSL=OFF \
+        -DLWS_WITHOUT_TESTAPPS=ON \
+        -DLWS_WITHOUT_TEST_SERVER=ON \
+        -DLWS_WITHOUT_TEST_CLIENT=ON \
+        -DLWS_WITHOUT_EXTENSIONS=ON \
+        -DLWS_WITH_SHARED=OFF \
+        -DLWS_WITH_STATIC=ON \
+        -DLWS_WITH_STRUCT=OFF \
+        -DLWS_WITH_STRUCT_JSON=OFF \
+        -DLWS_WITH_STRUCT_SQLITE3=OFF \
+        -DLWS_WITH_SQLITE3=OFF
+    
+    # Build
+    echo "Building libwebsockets..."
+    cmake --build . --config Release
+    
+    echo "libwebsockets built successfully!"
+else
+    echo "libwebsockets already built, skipping..."
+fi
+
 echo "Dependencies installed successfully!"
 
 # Export paths for CMake
-echo "Setting up environment variables..."
-if [[ $(arch) == "arm64" ]]; then
-    export LIBWEBSOCKETS_ROOT="/opt/homebrew"
-else
-    export LIBWEBSOCKETS_ROOT="/usr/local"
-fi
-
+export LIBWEBSOCKETS_ROOT="${LWS_DIR}"
 echo "LIBWEBSOCKETS_ROOT=${LIBWEBSOCKETS_ROOT}"
