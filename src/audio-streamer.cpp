@@ -166,7 +166,7 @@ void AudioStreamer::ProcessAudioData(obs_source_t* source, const struct audio_da
         for (size_t i = 0; i < frames; ++i) {
             float sample = in_ptr[i];
             // Clamp to [-1, 1] range
-            sample = std::max(-1.0f, std::min(1.0f, sample));
+            sample = (std::max)(-1.0f, (std::min)(1.0f, sample));
             // Convert to 16-bit
             out_ptr[i * channels + ch] = static_cast<int16_t>(sample * 32767.0f);
         }

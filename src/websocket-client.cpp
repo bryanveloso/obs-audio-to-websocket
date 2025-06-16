@@ -91,7 +91,6 @@ bool WebSocketClient::Connect(const std::string& uri) {
     info.port = CONTEXT_PORT_NO_LISTEN;
     info.protocols = protocols;
     info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
-    info.client_ssl_ca_filepath = nullptr;
     
     m_context = lws_create_context(&info);
     if (!m_context) {
@@ -406,7 +405,7 @@ void WebSocketClient::StartReconnectTimer() {
         }
         
         // Exponential backoff
-        m_reconnectDelay = std::min(m_reconnectDelay * 2, m_maxReconnectDelay);
+        m_reconnectDelay = (std::min)(m_reconnectDelay * 2, m_maxReconnectDelay);
         
         // Clean up old context
         if (m_context) {

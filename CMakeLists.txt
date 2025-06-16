@@ -150,9 +150,12 @@ target_link_libraries(
   PRIVATE OBS::libobs OBS::obs-frontend-api Qt6::Core Qt6::Widgets nlohmann_json::nlohmann_json ${LIBWEBSOCKETS_LIBRARY}
 )
 
-# Ubuntu/Linux libwebsockets compatibility fix
+# libwebsockets compatibility fix
 if(OS_LINUX)
   target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -fpermissive)
+elseif(OS_WINDOWS)
+  # MSVC equivalent of -fpermissive
+  target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE /permissive)
 endif()
 
 # Windows specific

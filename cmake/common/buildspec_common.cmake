@@ -55,7 +55,10 @@ function(_setup_obs_studio)
   if(OS_WINDOWS)
     set(_cmake_generator "${CMAKE_GENERATOR}")
     set(_cmake_arch "-A ${arch},version=${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}")
-    set(_cmake_extra "-DCMAKE_SYSTEM_VERSION=${CMAKE_SYSTEM_VERSION} -DCMAKE_ENABLE_SCRIPTING=OFF")
+    set(_cmake_extra 
+      "-DCMAKE_SYSTEM_VERSION=${CMAKE_SYSTEM_VERSION}"
+      "-DCMAKE_ENABLE_SCRIPTING=OFF"
+    )
   elseif(OS_MACOS)
     set(_cmake_generator "Xcode")
     set(_cmake_arch "-DCMAKE_OSX_ARCHITECTURES:STRING='arm64;x86_64'")
@@ -77,8 +80,14 @@ function(_setup_obs_studio)
       OUTPUT_STRIP_TRAILING_WHITESPACE
     )
     
-    # Pass deployment target and SDK path
-    set(_cmake_extra "-DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET} -DCMAKE_OSX_SYSROOT=${MACOS_SDK_PATH}")
+    # Create a list instead of a string
+    set(_cmake_extra 
+      "-DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}"
+      "-DCMAKE_OSX_SYSROOT=${MACOS_SDK_PATH}"
+    )
+  else()
+    # Linux/other platforms
+    set(_cmake_extra "")
   endif()
 
   message(STATUS "Configure ${label} (${arch})")
