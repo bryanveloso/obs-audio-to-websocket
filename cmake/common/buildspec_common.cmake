@@ -70,8 +70,8 @@ function(_setup_obs_studio)
     # Set environment variable that OBS's CMake might use
     set(ENV{MACOSX_DEPLOYMENT_TARGET} "${CMAKE_OSX_DEPLOYMENT_TARGET}")
 
-    # Only pass the deployment target - OBS will detect SDK itself
-    set(_cmake_extra "-DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+    # Pass deployment target and force SDK detection to bypass version check
+    set(_cmake_extra "-DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET} -DCMAKE_OSX_SYSROOT=macosx")
   endif()
 
   message(STATUS "Configure ${label} (${arch})")

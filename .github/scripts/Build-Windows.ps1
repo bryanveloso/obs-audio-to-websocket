@@ -73,22 +73,20 @@ function Build {
     # Install our custom dependencies
     Log-Group "Installing custom dependencies..."
     
-    # Check if we should use minimal deps (useful for CI to avoid large downloads)
-    $useMinimalDeps = $env:USE_MINIMAL_BOOST_DEPS -eq "true"
-    
-    if ($useMinimalDeps) {
-        $DepsScript = Join-Path $PSScriptRoot "Install-WindowsDeps-Minimal.ps1"
-        Write-Host "Using minimal Boost headers installation..."
-    } else {
-        $DepsScript = Join-Path $PSScriptRoot "Install-WindowsDeps.ps1"
-    }
+    # Always use minimal deps in CI
+    $DepsScript = Join-Path $PSScriptRoot "Install-WindowsDeps-Minimal.ps1"
+    Write-Host "Installing dependencies..."
     
     if (Test-Path $DepsScript) {
         $depPaths = & $DepsScript
         if ($depPaths) {
             $env:LIBWEBSOCKETS_ROOT = $depPaths.LIBWEBSOCKETS_ROOT
             $env:CMAKE_PREFIX_PATH = $depPaths.CMAKE_PREFIX_PATH
+            Write-Host "LIBWEBSOCKETS_ROOT: $env:LIBWEBSOCKETS_ROOT"
+            Write-Host "CMAKE_PREFIX_PATH: $env:CMAKE_PREFIX_PATH"
         }
+    } else {
+        Write-Error "Install-WindowsDeps-Minimal.ps1 not found!"
     }
     
     Log-Group "Configuring obs-audio-to-websocket..."
