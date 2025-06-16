@@ -1,0 +1,197 @@
+name: Build OBS Audio to WebSocket
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  windows-build:
+    runs-on: windows-2022
+    strategy:
+      matrix:
+        arch: [x64]
+        config: [Release]
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Add msbuild to PATH
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: '6.6.0'
+        arch: 'win64_msvc2019_64'
+        modules: 'qtwebsockets'
+
+    - name: Download OBS Studio
+      run: |
+        $obsVersion = "30.0.2"
+        Invoke-WebRequest -Uri "https://github.com/obsproject/obs-studio/releases/download/$obsVersion/OBS-Studio-$obsVersion-Windows.zip" -OutFile "obs-studio.zip"
+        Expand-Archive -Path "obs-studio.zip" -DestinationPath "."
+        Invoke-WebRequest -Uri "https://github.com/obsproject/obs-studio/releases/download/$obsVersion/OBS-Studio-$obsVersion-Windows-Development.zip" -OutFile "obs-studio-dev.zip"
+        Expand-Archive -Path "obs-studio-dev.zip" -DestinationPath "./obs-studio-dev"
+
+    - name: Install dependencies
+      run: |
+        # Install vcpkg
+        git clone https://github.com/Microsoft/vcpkg.git
+        cd vcpkg
+        ./bootstrap-vcpkg.bat
+        ./vcpkg integrate install
+        ./vcpkg install boost-system:x64-windows boost-thread:x64-windows websocketpp:x64-windows nlohmann-json:x64-windows
+        cd ..
+
+    - name: Configure
+      run: |
+        cmake -B build `
+          -G "Visual Studio 17 2022" `
+          -A x64 `
+          -DCMAKE_BUILD_TYPE=${{ matrix.config }} `
+          -DCMAKE_PREFIX_PATH="${{ github.workspace }}/obs-studio-dev" `
+          -DOBS_DIR="${{ github.workspace }}/obs-studio-dev" `
+          -DQt6_DIR="${{ env.Qt6_DIR }}/lib/cmake/Qt6" `
+          -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake"
+
+    - name: Build
+      run: cmake --build build --config ${{ matrix.config }}
+
+    - name: Package
+      run: |
+        mkdir -p package/obs-plugins/64bit
+        mkdir -p package/data/obs-plugins/obs-audio-to-websocket
+        
+        Copy-Item "build/${{ matrix.config }}/obs-audio-to-websocket.dll" "package/obs-plugins/64bit/"
+        Copy-Item "data/*" "package/data/obs-plugins/obs-audio-to-websocket/" -Recurse
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: obs-audio-to-websocket-windows-${{ matrix.arch }}
+        path: package/**
+
+  macos-build:
+    runs-on: macos-13
+    strategy:
+      matrix:
+        arch: [x86_64, arm64]
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install dependencies
+      run: |
+        brew install boost websocketpp nlohmann-json qt@6 cmake
+
+    - name: Download OBS Studio
+      run: |
+        OBS_VERSION="30.0.2"
+        wget "https://github.com/obsproject/obs-studio/releases/download/${OBS_VERSION}/OBS-${OBS_VERSION}-macOS-Apple.dmg"
+        hdiutil attach "OBS-${OBS_VERSION}-macOS-Apple.dmg"
+        cp -R "/Volumes/OBS-${OBS_VERSION}-macOS-Apple/OBS.app" .
+        hdiutil detach "/Volumes/OBS-${OBS_VERSION}-macOS-Apple"
+
+    - name: Configure
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} \
+          -DOBS_DIR="${{ github.workspace }}/OBS.app/Contents/Resources" \
+          -DQt6_DIR="$(brew --prefix qt@6)/lib/cmake/Qt6" \
+          -DCMAKE_PREFIX_PATH="$(brew --prefix)"
+
+    - name: Build
+      run: cmake --build build --config Release
+
+    - name: Package
+      run: |
+        mkdir -p package/obs-plugins
+        cp build/obs-audio-to-websocket.so package/obs-plugins/
+        
+        # Create a dmg
+        hdiutil create -volname "OBS Audio to WebSocket" -srcfolder package -ov -format UDZO obs-audio-to-websocket-macos-${{ matrix.arch }}.dmg
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: obs-audio-to-websocket-macos-${{ matrix.arch }}
+        path: obs-audio-to-websocket-macos-${{ matrix.arch }}.dmg
+
+  linux-build:
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          libboost-all-dev \
+          qt6-base-dev \
+          libgl1-mesa-dev \
+          libwebsocketpp-dev \
+          nlohmann-json3-dev \
+          wget
+
+    - name: Download OBS Studio development files
+      run: |
+        # For Linux, we typically need to build against OBS headers
+        git clone --recursive --depth 1 --branch 30.0.2 https://github.com/obsproject/obs-studio.git
+        
+    - name: Configure
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DOBS_DIR="${{ github.workspace }}/obs-studio/libobs" \
+          -DCMAKE_PREFIX_PATH="/usr/lib/x86_64-linux-gnu/cmake"
+
+    - name: Build
+      run: cmake --build build --config Release
+
+    - name: Package
+      run: |
+        mkdir -p package/obs-plugins/64bit
+        mkdir -p package/data/obs-plugins/obs-audio-to-websocket
+        
+        cp build/obs-audio-to-websocket.so package/obs-plugins/64bit/
+        cp -r data/* package/data/obs-plugins/obs-audio-to-websocket/
+        
+        tar -czf obs-audio-to-websocket-linux-x64.tar.gz -C package .
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: obs-audio-to-websocket-linux-x64
+        path: obs-audio-to-websocket-linux-x64.tar.gz
+
+  create-release:
+    needs: [windows-build, macos-build, linux-build]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          obs-audio-to-websocket-windows-x64/*
+          obs-audio-to-websocket-macos-x86_64/*
+          obs-audio-to-websocket-macos-arm64/*
+          obs-audio-to-websocket-linux-x64/*
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

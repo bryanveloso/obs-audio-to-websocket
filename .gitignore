@@ -1,0 +1,53 @@
+# Build directories
+build/
+out/
+cmake-build-*/
+.vs/
+
+# Dependencies
+deps/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Compiled files
+*.o
+*.obj
+*.so
+*.dll
+*.dylib
+*.lib
+*.a
+*.pdb
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+
+# Qt
+*.moc
+moc_*.cpp
+ui_*.h
+*.qm
+*.autosave
+
+# Package files
+*.zip
+*.tar.gz
+*.dmg
+*.exe
+*.msi
