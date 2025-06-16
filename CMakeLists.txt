@@ -32,7 +32,9 @@ if(OS_WINDOWS)
     NAMES libwebsockets.h
     PATHS
       $ENV{LIBWEBSOCKETS_ROOT}/include
+      $ENV{LIBWEBSOCKETS_ROOT}/build
       ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/include
+      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build
       C:/libwebsockets/include
   )
 
@@ -131,6 +133,11 @@ target_include_directories(
   ${CMAKE_PROJECT_NAME}
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIBWEBSOCKETS_INCLUDE_DIR}
 )
+
+# For Windows, also include the build directory for lws_config.h
+if(OS_WINDOWS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build")
+  target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build)
+endif()
 
 # Platform-specific definitions
 if(OS_WINDOWS)
