@@ -42,10 +42,28 @@ if(OS_WINDOWS)
     PATHS $ENV{LIBWEBSOCKETS_ROOT}/lib ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/lib C:/libwebsockets/lib
   )
 elseif(OS_MACOS)
-  # On macOS, check Homebrew paths
-  find_path(LIBWEBSOCKETS_INCLUDE_DIR NAMES libwebsockets.h PATHS /opt/homebrew/include /usr/local/include)
+  # On macOS, check Homebrew paths and environment
+  execute_process(COMMAND brew --prefix OUTPUT_VARIABLE HOMEBREW_PREFIX OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+  
+  find_path(
+    LIBWEBSOCKETS_INCLUDE_DIR 
+    NAMES libwebsockets.h 
+    PATHS 
+      $ENV{LIBWEBSOCKETS_ROOT}/include
+      ${HOMEBREW_PREFIX}/include
+      /opt/homebrew/include 
+      /usr/local/include
+  )
 
-  find_library(LIBWEBSOCKETS_LIBRARY NAMES websockets PATHS /opt/homebrew/lib /usr/local/lib)
+  find_library(
+    LIBWEBSOCKETS_LIBRARY 
+    NAMES websockets libwebsockets
+    PATHS 
+      $ENV{LIBWEBSOCKETS_ROOT}/lib
+      ${HOMEBREW_PREFIX}/lib
+      /opt/homebrew/lib 
+      /usr/local/lib
+  )
 elseif(OS_LINUX)
   # On Linux, use pkg-config if available
   find_package(PkgConfig)

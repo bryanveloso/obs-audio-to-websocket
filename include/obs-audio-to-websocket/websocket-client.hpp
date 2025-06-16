@@ -1,6 +1,8 @@
 #pragma once
 
+extern "C" {
 #include <libwebsockets.h>
+}
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -37,8 +39,9 @@ public:
 	void SetOnMessage(OnMessageCallback cb) { m_onMessage = cb; }
 	void SetOnError(OnErrorCallback cb) { m_onError = cb; }
 
-private:
 	static int LwsCallback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len);
+
+private:
 
 	void Run();
 	void ProcessSendQueue();

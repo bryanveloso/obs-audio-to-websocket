@@ -110,6 +110,12 @@ build() {
     typeset -gx CODESIGN_TEAM="$(print "${CODESIGN_IDENT}" | /usr/bin/sed -En 's/.+\((.+)\)/\1/p')"
   }
 
+  # Install dependencies
+  log_group "Installing dependencies..."
+  if [[ -f "${SCRIPT_HOME}/Install-MacOSDeps.sh" ]] {
+    source "${SCRIPT_HOME}/Install-MacOSDeps.sh"
+  }
+
   log_group "Configuring ${product_name}..."
   cmake -S ${project_root} ${cmake_args}
 

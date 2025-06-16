@@ -1,12 +1,12 @@
 {
   "dependencies": {
     "obs-studio": {
-      "version": "31.0.0-fix",
-      "baseUrl": "https://github.com/distroav/obs-studio/archive/refs/tags",
+      "version": "31.0.0",
+      "baseUrl": "https://github.com/obsproject/obs-studio/archive/refs/tags",
       "label": "OBS sources",
       "hashes": {
-        "macos": "badf8839e65b00d74440d6f7dc2e48639717c6f3709c95be88214775dffde292",
-        "windows-x64": "badf8839e65b00d74440d6f7dc2e48639717c6f3709c95be88214775dffde292"
+        "macos": "e8434dcee06f1702f0a0bbd1489296c77116fc51356835c3af4a6ed21b1e1c74",
+        "windows-x64": "e8434dcee06f1702f0a0bbd1489296c77116fc51356835c3af4a6ed21b1e1c74"
       }
     },
     "prebuilt": {
