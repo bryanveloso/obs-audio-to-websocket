@@ -53,6 +53,7 @@ try {
     # Configure with minimal options
     # Force clean configure to ensure no cached values
     cmake .. -G "Visual Studio 17 2022" -A x64 `
+        -DCMAKE_BUILD_TYPE=Release `
         -DLWS_WITH_SSL=OFF `
         -DLWS_WITHOUT_TESTAPPS=ON `
         -DLWS_WITHOUT_TEST_SERVER=ON `
@@ -68,9 +69,9 @@ try {
         -DLWS_WITH_EXTERNAL_POLL=OFF `
         -DLWS_WITH_LIBUV=OFF `
         -DLWS_WITH_CUSTOM_HEADERS=OFF `
-        -DLWS_WITH_STRUCT=OFF `
         -DLWS_WITH_PLUGINS=OFF `
-        -DLWS_WITH_LWSAC=OFF
+        -DLWS_WITH_LWSAC=OFF `
+        -DLWS_STATIC_PIC=OFF
     
     # Build Release configuration
     cmake --build . --config Release

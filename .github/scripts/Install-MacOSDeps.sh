@@ -41,13 +41,17 @@ if [ ! -f "${LWS_DIR}/build/lib/libwebsockets.a" ]; then
     rm libwebsockets.tar.gz
     
     cd libwebsockets
+    
+    # Fix the CMakeLists.txt to work with modern CMake
+    echo "Patching libwebsockets CMakeLists.txt..."
+    sed -i '' 's/cmake_minimum_required(VERSION 2.8.12)/cmake_minimum_required(VERSION 3.5)/' CMakeLists.txt
+    
     mkdir -p build
     cd build
     
     # Configure for universal binary matching OBS requirements
     echo "Configuring libwebsockets..."
     cmake .. \
-        -DCMAKE_POLICY_DEFAULT_CMP0000=NEW \
         -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
         -DLWS_WITH_SSL=OFF \
         -DLWS_WITHOUT_TESTAPPS=ON \

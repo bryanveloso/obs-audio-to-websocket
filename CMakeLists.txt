@@ -27,40 +27,34 @@ find_package(nlohmann_json REQUIRED)
 
 if(OS_WINDOWS)
   # On Windows, look for libwebsockets in common locations
+  set(LWS_SEARCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets")
+  if(DEFINED ENV{LIBWEBSOCKETS_ROOT})
+    set(LWS_SEARCH_ROOT "$ENV{LIBWEBSOCKETS_ROOT}")
+  endif()
+  
   find_path(
     LIBWEBSOCKETS_INCLUDE_DIR
     NAMES libwebsockets.h
     PATHS
-      $ENV{LIBWEBSOCKETS_ROOT}/include
-      $ENV{LIBWEBSOCKETS_ROOT}/build
-      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/include
-      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build
-      C:/libwebsockets/include
+      ${LWS_SEARCH_ROOT}/include
+      ${LWS_SEARCH_ROOT}/build
+    NO_DEFAULT_PATH
   )
 
+  # MSVC puts libs in build/[Config]/websockets_static.lib
   find_library(
     LIBWEBSOCKETS_LIBRARY
-    NAMES websockets_static websockets libwebsockets websockets-static
+    NAMES websockets_static websockets
     PATHS 
-      $ENV{LIBWEBSOCKETS_ROOT}/build/lib/Release
-      $ENV{LIBWEBSOCKETS_ROOT}/build/lib/RelWithDebInfo
-      $ENV{LIBWEBSOCKETS_ROOT}/build/lib/Debug
-      $ENV{LIBWEBSOCKETS_ROOT}/build/Release
-      $ENV{LIBWEBSOCKETS_ROOT}/build/RelWithDebInfo
-      $ENV{LIBWEBSOCKETS_ROOT}/build/Debug
-      $ENV{LIBWEBSOCKETS_ROOT}/build/lib
-      $ENV{LIBWEBSOCKETS_ROOT}/build
-      $ENV{LIBWEBSOCKETS_ROOT}/lib
-      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build/lib/Release
-      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build/lib/RelWithDebInfo
-      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build/lib/Debug
-      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build/Release
-      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build/RelWithDebInfo
-      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build/Debug
-      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build/lib
-      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build
-      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/lib
-      C:/libwebsockets/lib
+      ${LWS_SEARCH_ROOT}/build
+    PATH_SUFFIXES
+      Release
+      RelWithDebInfo
+      Debug
+      lib/Release
+      lib/RelWithDebInfo
+      lib/Debug
+    NO_DEFAULT_PATH
   )
 elseif(OS_MACOS)
   # On macOS, libwebsockets should be built by Install-MacOSDeps.sh
