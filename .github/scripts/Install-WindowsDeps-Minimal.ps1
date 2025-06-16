@@ -51,6 +51,7 @@ New-Item -ItemType Directory -Force -Path $LwsBuildDir | Out-Null
 Push-Location $LwsBuildDir
 try {
     # Configure with minimal options
+    # Force clean configure to ensure no cached values
     cmake .. -G "Visual Studio 17 2022" -A x64 `
         -DLWS_WITH_SSL=OFF `
         -DLWS_WITHOUT_TESTAPPS=ON `
@@ -61,12 +62,43 @@ try {
         -DLWS_WITH_STATIC=ON `
         -DLWS_WITH_STRUCT_JSON=OFF `
         -DLWS_WITH_STRUCT_SQLITE3=OFF `
-        -DLWS_WITH_SQLITE3=OFF
+        -DLWS_WITH_SQLITE3=OFF `
+        -DLWS_WITHOUT_BUILTIN_GETIFADDRS=ON `
+        -DLWS_WITH_EXTERNAL_POLL=OFF `
+        -DLWS_WITH_LIBUV=OFF `
+        -DLWS_WITH_CUSTOM_HEADERS=OFF `
+        -DLWS_WITH_STRUCT=OFF `
+        -DLWS_WITH_PLUGINS=OFF `
+        -DLWS_WITH_LWSAC=OFF
     
     # Build Release configuration
     cmake --build . --config Release
     
+    # Verify that SQLite support is disabled in the generated config
+    $ConfigFile = Join-Path $LwsBuildDir "lws_config.h"
+    if (Test-Path $ConfigFile) {
+        Write-Host "Checking generated lws_config.h for SQLite defines..."
+        $SqliteDefines = Select-String -Path $ConfigFile -Pattern "LWS_WITH_STRUCT_SQLITE3|LWS_WITH_SQLITE3"
+        if ($SqliteDefines) {
+            Write-Host "WARNING: Found SQLite defines in lws_config.h:"
+            $SqliteDefines | ForEach-Object { Write-Host "  $_" }
+        } else {
+            Write-Host "Good: No SQLite defines found in lws_config.h"
+        }
+    }
+    
     Write-Host "libwebsockets built successfully!"
+    
+    # Also check the installed headers
+    $InstalledConfigFile = Join-Path $LwsDir "include/lws_config.h"
+    if (Test-Path $InstalledConfigFile) {
+        Write-Host "Checking installed lws_config.h..."
+        $InstalledSqliteDefines = Select-String -Path $InstalledConfigFile -Pattern "LWS_WITH_STRUCT_SQLITE3|LWS_WITH_SQLITE3"
+        if ($InstalledSqliteDefines) {
+            Write-Host "WARNING: Found SQLite defines in installed lws_config.h:"
+            $InstalledSqliteDefines | ForEach-Object { Write-Host "  $_" }
+        }
+    }
 } finally {
     Pop-Location
 }
