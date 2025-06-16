@@ -25,9 +25,15 @@ $LwsUrl = "https://github.com/warmcat/libwebsockets/archive/refs/tags/v${LwsVers
 $LwsZip = Join-Path $DepsDir "libwebsockets.zip"
 $LwsDir = Join-Path $DepsDir "libwebsockets"
 
+# Clean existing libwebsockets directory to force fresh build
+if (Test-Path $LwsDir) {
+    Write-Host "Removing existing libwebsockets directory..."
+    Remove-Item -Path $LwsDir -Recurse -Force
+}
+
 Invoke-WebRequest -Uri $LwsUrl -OutFile $LwsZip
 Expand-Archive -Path $LwsZip -DestinationPath $DepsDir -Force
-Move-Item -Path (Join-Path $DepsDir "libwebsockets-${LwsVersion}") -Destination $LwsDir -Force -ErrorAction SilentlyContinue
+Move-Item -Path (Join-Path $DepsDir "libwebsockets-${LwsVersion}") -Destination $LwsDir -Force
 Remove-Item $LwsZip
 
 # Build libwebsockets for Windows
