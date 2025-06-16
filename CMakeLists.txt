@@ -154,8 +154,8 @@ target_link_libraries(
 if(OS_LINUX)
   target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -fpermissive)
 elseif(OS_MACOS)
-  # Same as Linux - use fpermissive
-  target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -fpermissive)
+  # Disable the specific warning that's being treated as error
+  target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -Wno-error=missing-declarations)
 elseif(OS_WINDOWS)
   # For Windows, define macros to exclude problematic features
   target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE 

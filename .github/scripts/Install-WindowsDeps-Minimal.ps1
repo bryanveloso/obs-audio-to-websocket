@@ -33,6 +33,13 @@ Remove-Item $LwsZip
 # Build libwebsockets for Windows
 Write-Host "Building libwebsockets..."
 $LwsBuildDir = Join-Path $LwsDir "build"
+
+# Clean build directory if it exists
+if (Test-Path $LwsBuildDir) {
+    Write-Host "Cleaning existing build directory..."
+    Remove-Item -Path $LwsBuildDir -Recurse -Force
+}
+
 New-Item -ItemType Directory -Force -Path $LwsBuildDir | Out-Null
 
 Push-Location $LwsBuildDir
