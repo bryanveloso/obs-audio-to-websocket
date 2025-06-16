@@ -1,9 +1,5 @@
 #pragma once
 
-// Define before including libwebsockets to avoid header issues
-#define LWS_WITH_STRUCT_JSON 0
-#define LWS_WITH_STRUCT_SQLITE3 0
-
 #include <libwebsockets.h>
 #include <thread>
 #include <mutex>

@@ -154,12 +154,15 @@ target_link_libraries(
 if(OS_LINUX)
   target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -fpermissive)
 elseif(OS_MACOS)
-  # Disable the specific warning for macOS
-  target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -Wno-missing-declarations)
+  # Same as Linux - use fpermissive
+  target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -fpermissive)
 elseif(OS_WINDOWS)
-  # For MSVC, we need to use a different approach
-  # Define LWS_BUILDING_STATIC to use static library properly
-  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE LWS_BUILDING_STATIC _CRT_SECURE_NO_WARNINGS)
+  # For Windows, define macros to exclude problematic features
+  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE 
+    LWS_WITH_STRUCT_JSON=0
+    LWS_WITH_STRUCT_SQLITE3=0
+    _CRT_SECURE_NO_WARNINGS
+  )
 endif()
 
 # Windows specific

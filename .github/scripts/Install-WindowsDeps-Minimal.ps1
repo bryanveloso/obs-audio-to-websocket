@@ -45,7 +45,10 @@ try {
         -DLWS_WITHOUT_TEST_CLIENT=ON `
         -DLWS_WITHOUT_EXTENSIONS=ON `
         -DLWS_WITH_SHARED=OFF `
-        -DLWS_WITH_STATIC=ON
+        -DLWS_WITH_STATIC=ON `
+        -DLWS_WITH_STRUCT_JSON=OFF `
+        -DLWS_WITH_STRUCT_SQLITE3=OFF `
+        -DLWS_WITH_SQLITE3=OFF
     
     # Build Release configuration
     cmake --build . --config Release
