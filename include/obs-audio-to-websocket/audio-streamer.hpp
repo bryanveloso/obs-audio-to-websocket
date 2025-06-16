@@ -83,10 +83,4 @@ private:
 
 } // namespace obs_audio_to_websocket
 
-// C-style interface for OBS
-extern "C" {
-    EXPORT void obs_module_load(void);
-    EXPORT void obs_module_unload(void);
-    EXPORT const char* obs_module_name(void);
-    EXPORT const char* obs_module_description(void);
-}
+// Module functions are declared in obs-module.h

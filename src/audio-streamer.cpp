@@ -3,6 +3,11 @@
 #include <chrono>
 #include <util/platform.h>
 #include <util/threading.h>
+#include <obs-module.h>
+
+#ifndef UNUSED_PARAMETER
+#define UNUSED_PARAMETER(param) (void)param
+#endif
 
 namespace obs_audio_to_websocket {
 
@@ -100,20 +105,24 @@ void AudioStreamer::AttachAudioSource() {
         return;
     }
     
-    signal_handler_t* handler = obs_source_get_signal_handler(m_audioSource);
-    if (handler) {
-        signal_handler_connect(handler, "audio_data", AudioCaptureCallback, this);
-    }
+    // Use OBS audio capture API
+    obs_source_add_audio_capture_callback(m_audioSource, 
+        [](void* param, obs_source_t* source, const struct audio_data* audio_data, bool muted) {
+            auto* streamer = static_cast<AudioStreamer*>(param);
+            streamer->ProcessAudioData(source, audio_data, muted);
+        }, this);
 }
 
 void AudioStreamer::DetachAudioSource() {
     std::lock_guard<std::mutex> lock(m_sourceMutex);
     
     if (m_audioSource) {
-        signal_handler_t* handler = obs_source_get_signal_handler(m_audioSource);
-        if (handler) {
-            signal_handler_disconnect(handler, "audio_data", AudioCaptureCallback, this);
-        }
+        // Remove audio capture callback
+        obs_source_remove_audio_capture_callback(m_audioSource, 
+            [](void* param, obs_source_t* source, const struct audio_data* audio_data, bool muted) {
+                auto* streamer = static_cast<AudioStreamer*>(param);
+                streamer->ProcessAudioData(source, audio_data, muted);
+            }, this);
         
         obs_source_release(m_audioSource);
         m_audioSource = nullptr;
@@ -147,7 +156,7 @@ void AudioStreamer::ProcessAudioData(obs_source_t* source, const struct audio_da
     chunk.timestamp = audio_data->timestamp;
     chunk.format = AudioFormat(sample_rate, channels, 16);
     chunk.sourceId = obs_source_get_name(source);
-    chunk.sourceName = obs_source_get_display_name(source);
+    chunk.sourceName = obs_source_get_name(source);
     
     // Copy and convert audio data to 16-bit PCM
     int16_t* out_ptr = reinterpret_cast<int16_t*>(chunk.data.data());
@@ -176,6 +185,7 @@ void AudioStreamer::OnWebSocketDisconnected() {
 }
 
 void AudioStreamer::OnWebSocketMessage(const std::string& message) {
+    UNUSED_PARAMETER(message);
     // Handle status messages from server
     try {
         // Parse JSON status message if needed
