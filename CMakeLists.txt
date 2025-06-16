@@ -27,46 +27,41 @@ find_package(nlohmann_json REQUIRED)
 
 if(OS_WINDOWS)
   # On Windows, look for libwebsockets in common locations
-  find_path(LIBWEBSOCKETS_INCLUDE_DIR 
+  find_path(
+    LIBWEBSOCKETS_INCLUDE_DIR
     NAMES libwebsockets.h
-    PATHS 
+    PATHS
       $ENV{LIBWEBSOCKETS_ROOT}/include
       ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/include
       C:/libwebsockets/include
   )
-  
-  find_library(LIBWEBSOCKETS_LIBRARY
+
+  find_library(
+    LIBWEBSOCKETS_LIBRARY
     NAMES websockets libwebsockets
-    PATHS
-      $ENV{LIBWEBSOCKETS_ROOT}/lib
-      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/lib
-      C:/libwebsockets/lib
+    PATHS $ENV{LIBWEBSOCKETS_ROOT}/lib ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/lib C:/libwebsockets/lib
   )
 elseif(OS_MACOS)
   # On macOS, check Homebrew paths
-  find_path(LIBWEBSOCKETS_INCLUDE_DIR 
-    NAMES libwebsockets.h
-    PATHS /opt/homebrew/include /usr/local/include
-  )
-  
-  find_library(LIBWEBSOCKETS_LIBRARY
-    NAMES websockets
-    PATHS /opt/homebrew/lib /usr/local/lib
-  )
+  find_path(LIBWEBSOCKETS_INCLUDE_DIR NAMES libwebsockets.h PATHS /opt/homebrew/include /usr/local/include)
+
+  find_library(LIBWEBSOCKETS_LIBRARY NAMES websockets PATHS /opt/homebrew/lib /usr/local/lib)
 elseif(OS_LINUX)
   # On Linux, use pkg-config if available
   find_package(PkgConfig)
   if(PKG_CONFIG_FOUND)
     pkg_check_modules(PC_LIBWEBSOCKETS libwebsockets)
   endif()
-  
-  find_path(LIBWEBSOCKETS_INCLUDE_DIR
+
+  find_path(
+    LIBWEBSOCKETS_INCLUDE_DIR
     NAMES libwebsockets.h
     HINTS ${PC_LIBWEBSOCKETS_INCLUDE_DIRS}
     PATHS /usr/include /usr/local/include
   )
-  
-  find_library(LIBWEBSOCKETS_LIBRARY
+
+  find_library(
+    LIBWEBSOCKETS_LIBRARY
     NAMES websockets
     HINTS ${PC_LIBWEBSOCKETS_LIBRARY_DIRS}
     PATHS /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu
@@ -108,12 +103,10 @@ set(plugin_UI ui/settings-dialog.ui)
 # Add plugin
 add_library(${CMAKE_PROJECT_NAME} MODULE ${plugin_SOURCES} ${plugin_HEADERS})
 
-
 # Plugin includes
 target_include_directories(
-  ${CMAKE_PROJECT_NAME} PRIVATE 
-  ${CMAKE_CURRENT_SOURCE_DIR}/include 
-  ${LIBWEBSOCKETS_INCLUDE_DIR}
+  ${CMAKE_PROJECT_NAME}
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIBWEBSOCKETS_INCLUDE_DIR}
 )
 
 # Platform-specific definitions
@@ -124,13 +117,7 @@ endif()
 # Link libraries
 target_link_libraries(
   ${CMAKE_PROJECT_NAME}
-  PRIVATE 
-  OBS::libobs 
-  OBS::obs-frontend-api 
-  Qt6::Core 
-  Qt6::Widgets 
-  nlohmann_json::nlohmann_json
-  ${LIBWEBSOCKETS_LIBRARY}
+  PRIVATE OBS::libobs OBS::obs-frontend-api Qt6::Core Qt6::Widgets nlohmann_json::nlohmann_json ${LIBWEBSOCKETS_LIBRARY}
 )
 
 # Windows specific

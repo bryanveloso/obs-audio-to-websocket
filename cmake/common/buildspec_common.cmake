@@ -59,17 +59,17 @@ function(_setup_obs_studio)
   elseif(OS_MACOS)
     set(_cmake_generator "Xcode")
     set(_cmake_arch "-DCMAKE_OSX_ARCHITECTURES:STRING='arm64;x86_64'")
-    
+
     # Get SDK version to pass to OBS
     execute_process(
       COMMAND xcrun --sdk macosx --show-sdk-version
       OUTPUT_VARIABLE MACOS_SDK_VERSION
       OUTPUT_STRIP_TRAILING_WHITESPACE
     )
-    
+
     # Set environment variable that OBS's CMake might use
     set(ENV{MACOSX_DEPLOYMENT_TARGET} "${CMAKE_OSX_DEPLOYMENT_TARGET}")
-    
+
     # Only pass the deployment target - OBS will detect SDK itself
     set(_cmake_extra "-DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}")
   endif()
@@ -82,9 +82,9 @@ function(_setup_obs_studio)
     message(STATUS "MACOS_SDK_VERSION: ${MACOS_SDK_VERSION}")
   endif()
   message(STATUS "_cmake_extra: ${_cmake_extra}")
-  
+
   # Don't try to detect or pass Xcode version - let OBS handle it
-  
+
   execute_process(
     COMMAND
       "${CMAKE_COMMAND}" -S "${dependencies_dir}/${_obs_destination}" -B
@@ -96,7 +96,7 @@ function(_setup_obs_studio)
     OUTPUT_VARIABLE _process_output
     ERROR_VARIABLE _process_error
   )
-  
+
   if(_process_result)
     message(STATUS "Configure failed with result: ${_process_result}")
     message(STATUS "Output: ${_process_output}")
