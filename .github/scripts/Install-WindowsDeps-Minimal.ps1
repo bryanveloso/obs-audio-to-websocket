@@ -30,9 +30,30 @@ Expand-Archive -Path $LwsZip -DestinationPath $DepsDir -Force
 Move-Item -Path (Join-Path $DepsDir "libwebsockets-${LwsVersion}") -Destination $LwsDir -Force -ErrorAction SilentlyContinue
 Remove-Item $LwsZip
 
-# For now, we'll just provide the headers and let CMake find the system libwebsockets
-# or the user can provide pre-built binaries
-Write-Host "libwebsockets source downloaded to: $LwsDir"
+# Build libwebsockets for Windows
+Write-Host "Building libwebsockets..."
+$LwsBuildDir = Join-Path $LwsDir "build"
+New-Item -ItemType Directory -Force -Path $LwsBuildDir | Out-Null
+
+Push-Location $LwsBuildDir
+try {
+    # Configure with minimal options
+    cmake .. -G "Visual Studio 17 2022" -A x64 `
+        -DLWS_WITH_SSL=OFF `
+        -DLWS_WITHOUT_TESTAPPS=ON `
+        -DLWS_WITHOUT_TEST_SERVER=ON `
+        -DLWS_WITHOUT_TEST_CLIENT=ON `
+        -DLWS_WITHOUT_EXTENSIONS=ON `
+        -DLWS_WITH_SHARED=OFF `
+        -DLWS_WITH_STATIC=ON
+    
+    # Build Release configuration
+    cmake --build . --config Release
+    
+    Write-Host "libwebsockets built successfully!"
+} finally {
+    Pop-Location
+}
 
 # Return the paths for the parent script to use
 $result = @{

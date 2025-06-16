@@ -38,8 +38,13 @@ if(OS_WINDOWS)
 
   find_library(
     LIBWEBSOCKETS_LIBRARY
-    NAMES websockets libwebsockets
-    PATHS $ENV{LIBWEBSOCKETS_ROOT}/lib ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/lib C:/libwebsockets/lib
+    NAMES websockets_static websockets libwebsockets
+    PATHS 
+      $ENV{LIBWEBSOCKETS_ROOT}/build/lib/Release
+      $ENV{LIBWEBSOCKETS_ROOT}/lib 
+      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build/lib/Release
+      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/lib 
+      C:/libwebsockets/lib
   )
 elseif(OS_MACOS)
   # On macOS, check Homebrew paths and environment
@@ -137,6 +142,11 @@ target_link_libraries(
   ${CMAKE_PROJECT_NAME}
   PRIVATE OBS::libobs OBS::obs-frontend-api Qt6::Core Qt6::Widgets nlohmann_json::nlohmann_json ${LIBWEBSOCKETS_LIBRARY}
 )
+
+# Ubuntu/Linux libwebsockets compatibility fix
+if(OS_LINUX)
+  target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -fpermissive)
+endif()
 
 # Windows specific
 if(OS_WINDOWS)

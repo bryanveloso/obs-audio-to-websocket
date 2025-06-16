@@ -1,8 +1,6 @@
 #pragma once
 
-extern "C" {
 #include <libwebsockets.h>
-}
 #include <thread>
 #include <mutex>
 #include <condition_variable>
