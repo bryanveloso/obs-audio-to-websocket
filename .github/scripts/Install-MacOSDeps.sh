@@ -47,6 +47,7 @@ if [ ! -f "${LWS_DIR}/build/lib/libwebsockets.a" ]; then
     # Configure for universal binary matching OBS requirements
     echo "Configuring libwebsockets..."
     cmake .. \
+        -DCMAKE_POLICY_DEFAULT_CMP0000=NEW \
         -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
         -DLWS_WITH_SSL=OFF \
         -DLWS_WITHOUT_TESTAPPS=ON \

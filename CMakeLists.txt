@@ -40,18 +40,27 @@ if(OS_WINDOWS)
 
   find_library(
     LIBWEBSOCKETS_LIBRARY
-    NAMES websockets_static websockets libwebsockets
+    NAMES websockets_static websockets libwebsockets websockets-static
     PATHS 
       $ENV{LIBWEBSOCKETS_ROOT}/build/lib/Release
+      $ENV{LIBWEBSOCKETS_ROOT}/build/lib/RelWithDebInfo
+      $ENV{LIBWEBSOCKETS_ROOT}/build/lib/Debug
       $ENV{LIBWEBSOCKETS_ROOT}/build/Release
+      $ENV{LIBWEBSOCKETS_ROOT}/build/RelWithDebInfo
+      $ENV{LIBWEBSOCKETS_ROOT}/build/Debug
       $ENV{LIBWEBSOCKETS_ROOT}/build/lib
+      $ENV{LIBWEBSOCKETS_ROOT}/build
       $ENV{LIBWEBSOCKETS_ROOT}/lib
       ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build/lib/Release
+      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build/lib/RelWithDebInfo
+      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build/lib/Debug
       ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build/Release
+      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build/RelWithDebInfo
+      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build/Debug
       ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build/lib
+      ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build
       ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/lib
       C:/libwebsockets/lib
-    PATH_SUFFIXES Release Debug
   )
 elseif(OS_MACOS)
   # On macOS, libwebsockets should be built by Install-MacOSDeps.sh
