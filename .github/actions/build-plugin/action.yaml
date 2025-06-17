@@ -69,6 +69,13 @@ runs:
 
         .github/scripts/build-ubuntu ${build_args}
 
+    - name: Install Windows Dependencies 📦
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        # Install Windows Dependencies
+        .github/scripts/Fetch-WindowsDeps.ps1
+
     - name: Run Windows Build
       if: runner.os == 'Windows'
       shell: pwsh
@@ -77,6 +84,9 @@ runs:
         if ( $Env:RUNNER_DEBUG -ne $null ) {
           Set-PSDebug -Trace 1
         }
+
+        # Add libwebsockets to CMAKE_PREFIX_PATH
+        $env:CMAKE_PREFIX_PATH = "${env:CMAKE_PREFIX_PATH};${{ github.workspace }}/.deps/libwebsockets"
 
         $BuildArgs = @{
           Target = '${{ inputs.target }}'

@@ -68,11 +68,7 @@ else()
 endif()
 
 if(NOT LIBWEBSOCKETS_INCLUDE_DIR OR NOT LIBWEBSOCKETS_LIBRARY)
-  if(OS_WINDOWS)
-    message(FATAL_ERROR "libwebsockets not found. Please install libwebsockets and add it to CMAKE_PREFIX_PATH.")
-  else()
-    message(FATAL_ERROR "libwebsockets not found. Please install libwebsockets.")
-  endif()
+  message(FATAL_ERROR "libwebsockets not found. Please install libwebsockets.")
 endif()
 
 # Plugin files
@@ -102,6 +98,13 @@ target_include_directories(
 # Platform-specific definitions
 if(OS_WINDOWS)
   target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE _WIN32_WINNT=0x0603)
+endif()
+
+# libwebsockets configuration  
+if(OS_MACOS)
+  # Homebrew's libwebsockets requires OpenSSL
+  find_package(OpenSSL REQUIRED)
+  target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${OPENSSL_INCLUDE_DIR})
 endif()
 
 # Link libraries
