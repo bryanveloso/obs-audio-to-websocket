@@ -22,105 +22,57 @@ find_package(libobs REQUIRED)
 find_package(obs-frontend-api REQUIRED)
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
 
-# Find libwebsockets and nlohmann_json
+# Find dependencies
 find_package(nlohmann_json REQUIRED)
+find_package(PkgConfig)
 
+# Find libwebsockets
 if(OS_WINDOWS)
-  # On Windows, look for libwebsockets in common locations
-  set(LWS_SEARCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets")
-  if(DEFINED ENV{LIBWEBSOCKETS_ROOT})
-    set(LWS_SEARCH_ROOT "$ENV{LIBWEBSOCKETS_ROOT}")
-  endif()
-  
-  find_path(
-    LIBWEBSOCKETS_INCLUDE_DIR
-    NAMES libwebsockets.h
-    PATHS
-      ${LWS_SEARCH_ROOT}/include
-      ${LWS_SEARCH_ROOT}/build
-    NO_DEFAULT_PATH
-  )
-
-  # MSVC puts libs in build/[Config]/websockets_static.lib
-  find_library(
-    LIBWEBSOCKETS_LIBRARY
-    NAMES websockets_static websockets
-    PATHS 
-      ${LWS_SEARCH_ROOT}/build
-    PATH_SUFFIXES
-      Release
-      RelWithDebInfo
-      Debug
-      lib/Release
-      lib/RelWithDebInfo
-      lib/Debug
-    NO_DEFAULT_PATH
-  )
-elseif(OS_MACOS)
-  # On macOS, libwebsockets should be built by Install-MacOSDeps.sh
-  # Check environment variable first
-  if(DEFINED ENV{LIBWEBSOCKETS_ROOT})
-    set(LIBWEBSOCKETS_ROOT "$ENV{LIBWEBSOCKETS_ROOT}")
+  # Windows: User must provide libwebsockets via CMAKE_PREFIX_PATH
+  find_package(websockets QUIET)
+  if(NOT websockets_FOUND)
+    find_path(LIBWEBSOCKETS_INCLUDE_DIR
+      NAMES libwebsockets.h
+    )
+    find_library(LIBWEBSOCKETS_LIBRARY
+      NAMES websockets_static websockets
+    )
   else()
-    set(LIBWEBSOCKETS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets")
+    set(LIBWEBSOCKETS_INCLUDE_DIR ${websockets_INCLUDE_DIRS})
+    set(LIBWEBSOCKETS_LIBRARY ${websockets_LIBRARIES})
   endif()
-  
-  find_path(
-    LIBWEBSOCKETS_INCLUDE_DIR
-    NAMES libwebsockets.h
-    PATHS
-      ${LIBWEBSOCKETS_ROOT}/include
-      /opt/homebrew/include
-      /usr/local/include
-  )
-  
-  find_library(
-    LIBWEBSOCKETS_LIBRARY
-    NAMES websockets libwebsockets
-    PATHS
-      ${LIBWEBSOCKETS_ROOT}/build/lib
-      ${LIBWEBSOCKETS_ROOT}/lib
-      /opt/homebrew/lib
-      /usr/local/lib
-  )
-elseif(OS_LINUX)
-  # On Linux, use pkg-config if available
-  find_package(PkgConfig)
+else()
+  # macOS/Linux: Use system libraries
   if(PKG_CONFIG_FOUND)
-    pkg_check_modules(PC_LIBWEBSOCKETS libwebsockets)
+    pkg_check_modules(LIBWEBSOCKETS libwebsockets)
   endif()
 
-  find_path(
-    LIBWEBSOCKETS_INCLUDE_DIR
+  find_path(LIBWEBSOCKETS_INCLUDE_DIR
     NAMES libwebsockets.h
-    HINTS ${PC_LIBWEBSOCKETS_INCLUDE_DIRS}
-    PATHS /usr/include /usr/local/include
+    HINTS ${LIBWEBSOCKETS_INCLUDE_DIRS}
+    PATHS
+      /usr/include
+      /usr/local/include
+      /opt/homebrew/include
   )
 
-  find_library(
-    LIBWEBSOCKETS_LIBRARY
+  find_library(LIBWEBSOCKETS_LIBRARY
     NAMES websockets
-    HINTS ${PC_LIBWEBSOCKETS_LIBRARY_DIRS}
-    PATHS /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu
+    HINTS ${LIBWEBSOCKETS_LIBRARY_DIRS}
+    PATHS
+      /usr/lib
+      /usr/local/lib
+      /usr/lib/x86_64-linux-gnu
+      /opt/homebrew/lib
   )
 endif()
 
 if(NOT LIBWEBSOCKETS_INCLUDE_DIR OR NOT LIBWEBSOCKETS_LIBRARY)
-  message(STATUS "libwebsockets not found")
-  message(STATUS "Include dir: ${LIBWEBSOCKETS_INCLUDE_DIR}")
-  message(STATUS "Library: ${LIBWEBSOCKETS_LIBRARY}")
   if(OS_WINDOWS)
-    message(STATUS "On Windows, make sure libwebsockets is installed and LIBWEBSOCKETS_ROOT is set")
-  elseif(OS_LINUX)
-    message(STATUS "On Linux, install libwebsockets-dev via apt")
-  elseif(OS_MACOS)
-    message(STATUS "On macOS, install libwebsockets via Homebrew")
+    message(FATAL_ERROR "libwebsockets not found. Please install libwebsockets and add it to CMAKE_PREFIX_PATH.")
+  else()
+    message(FATAL_ERROR "libwebsockets not found. Please install libwebsockets.")
   endif()
-  message(FATAL_ERROR "libwebsockets not found. Please install libwebsockets")
-else()
-  message(STATUS "Found libwebsockets:")
-  message(STATUS "  Include: ${LIBWEBSOCKETS_INCLUDE_DIR}")
-  message(STATUS "  Library: ${LIBWEBSOCKETS_LIBRARY}")
 endif()
 
 # Plugin files
@@ -146,17 +98,6 @@ target_include_directories(
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIBWEBSOCKETS_INCLUDE_DIR}
 )
 
-# For Windows, also include the build directory for lws_config.h
-if(OS_WINDOWS)
-  # First try the environment variable path
-  if(DEFINED ENV{LIBWEBSOCKETS_ROOT})
-    target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE $ENV{LIBWEBSOCKETS_ROOT}/build)
-  endif()
-  # Also try the local deps path
-  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build")
-    target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/deps/libwebsockets/build)
-  endif()
-endif()
 
 # Platform-specific definitions
 if(OS_WINDOWS)

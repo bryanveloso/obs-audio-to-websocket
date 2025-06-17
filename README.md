@@ -38,10 +38,8 @@ This plugin uses the official OBS plugin template build system.
 This plugin requires some dependencies beyond what OBS provides:
 
 **Windows:**
-- Install libwebsockets (download from https://libwebsockets.org/ or build from source)
-- Install nlohmann/json (download from https://github.com/nlohmann/json)
-- Set environment variable:
-  - `LIBWEBSOCKETS_ROOT` to your libwebsockets installation
+- Install libwebsockets and nlohmann/json (recommended: use vcpkg or build from source)
+- Add the installation path to CMAKE_PREFIX_PATH when configuring
 
 **macOS:**
 ```bash
