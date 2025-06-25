@@ -1,0 +1,8 @@
+package 'cmake'
+package 'ccache'
+package 'git'
+package 'jq'
+package 'ninja-build', bin: 'ninja'
+package 'pkg-config'
+package 'libwebsockets-dev'
+package 'nlohmann-json3-dev'

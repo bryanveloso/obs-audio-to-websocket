@@ -1,5 +1,6 @@
 #include "obs-audio-to-websocket/settings-dialog.hpp"
 #include "obs-audio-to-websocket/audio-streamer.hpp"
+#include <util/config-file.h>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -121,8 +122,12 @@ void SettingsDialog::connectSignals() {
 }
 
 void SettingsDialog::loadSettings() {
-    // Load from OBS config
-    config_t* config = obs_frontend_get_global_config();
+    // Load from OBS user config
+#if LIBOBS_API_MAJOR_VER >= 31
+    config_t* config = obs_frontend_get_user_config();
+#else
+    config_t* config = obs_frontend_get_profile_config();
+#endif
     
     const char* url = config_get_string(config, "AudioStreamer", "WebSocketUrl");
     if (url && strlen(url) > 0) {
@@ -140,8 +145,12 @@ void SettingsDialog::loadSettings() {
 }
 
 void SettingsDialog::saveSettings() {
-    // Save to OBS config
-    config_t* config = obs_frontend_get_global_config();
+    // Save to OBS user config
+#if LIBOBS_API_MAJOR_VER >= 31
+    config_t* config = obs_frontend_get_user_config();
+#else
+    config_t* config = obs_frontend_get_profile_config();
+#endif
     
     config_set_string(config, "AudioStreamer", "WebSocketUrl", 
                      m_urlEdit->text().toStdString().c_str());
@@ -239,7 +248,7 @@ void SettingsDialog::populateAudioSources() {
         uint32_t flags = obs_source_get_output_flags(source);
         if (flags & OBS_SOURCE_AUDIO) {
             const char* name = obs_source_get_name(source);
-            const char* display_name = obs_source_get_display_name(source);
+            const char* display_name = obs_source_get_name(source);
             
             if (name && display_name) {
                 combo->addItem(QString("%1").arg(display_name), QString(name));

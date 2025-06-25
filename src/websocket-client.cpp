@@ -1,21 +1,38 @@
 #include "obs-audio-to-websocket/websocket-client.hpp"
+#include <obs-module.h>
 #include <nlohmann/json.hpp>
 #include <chrono>
+#include <cstring>
+#include <sstream>
+
+#ifndef UNUSED_PARAMETER
+#define UNUSED_PARAMETER(param) (void)param
+#endif
 
 namespace obs_audio_to_websocket {
 
 using json = nlohmann::json;
 
+// Static members
+std::map<struct lws*, WebSocketClient*> WebSocketClient::s_instances;
+std::mutex WebSocketClient::s_instancesMutex;
+
+// LWS protocols
+static struct lws_protocols protocols[] = {
+    {
+        "audio-protocol",
+        WebSocketClient::LwsCallback,
+        0,
+        65536, // rx buffer size
+        0,
+        NULL,
+        0
+    },
+    { NULL, NULL, 0, 0, 0, NULL, 0 }
+};
+
 WebSocketClient::WebSocketClient() {
-    m_client.clear_access_channels(websocketpp::log::alevel::all);
-    m_client.clear_error_channels(websocketpp::log::elevel::all);
-    
-    m_client.init_asio();
-    
-    m_client.set_open_handler([this](ConnectionHdl hdl) { OnOpen(hdl); });
-    m_client.set_close_handler([this](ConnectionHdl hdl) { OnClose(hdl); });
-    m_client.set_message_handler([this](ConnectionHdl hdl, MessagePtr msg) { OnMessage(hdl, msg); });
-    m_client.set_fail_handler([this](ConnectionHdl hdl) { OnFail(hdl); });
+    lws_set_log_level(LLL_ERR | LLL_WARN, nullptr);
 }
 
 WebSocketClient::~WebSocketClient() {
@@ -28,130 +45,219 @@ bool WebSocketClient::Connect(const std::string& uri) {
     }
     
     m_uri = uri;
-    m_running = true;
+    m_shouldReconnect = true;
     
-    try {
-        websocketpp::lib::error_code ec;
-        Client::connection_ptr con = m_client.get_connection(uri, ec);
+    // Parse URI
+    std::string protocol, host, path;
+    int port = 80;
+    
+    // Simple URI parser
+    size_t pos = uri.find("://");
+    if (pos != std::string::npos) {
+        protocol = uri.substr(0, pos);
+        size_t hostStart = pos + 3;
+        size_t pathStart = uri.find('/', hostStart);
         
-        if (ec) {
-            if (m_onError) {
-                m_onError("Connection initialization failed: " + ec.message());
+        if (pathStart != std::string::npos) {
+            std::string hostPort = uri.substr(hostStart, pathStart - hostStart);
+            path = uri.substr(pathStart);
+            
+            size_t colonPos = hostPort.find(':');
+            if (colonPos != std::string::npos) {
+                host = hostPort.substr(0, colonPos);
+                port = std::stoi(hostPort.substr(colonPos + 1));
+            } else {
+                host = hostPort;
             }
-            m_running = false;
-            return false;
+        } else {
+            host = uri.substr(hostStart);
+            path = "/";
         }
-        
-        m_client.connect(con);
-        
-        m_thread = std::thread(&WebSocketClient::Run, this);
-        m_sendThread = std::thread(&WebSocketClient::ProcessSendQueue, this);
-        
-        return true;
-    } catch (const std::exception& e) {
+    }
+    
+    if (protocol != "ws" && protocol != "wss") {
         if (m_onError) {
-            m_onError("Connection failed: " + std::string(e.what()));
+            m_onError("Invalid protocol: " + protocol);
         }
-        m_running = false;
         return false;
     }
+    
+    m_host = host;
+    m_path = path;
+    m_port = port;
+    
+    // Create LWS context
+    struct lws_context_creation_info info = {};
+    info.port = CONTEXT_PORT_NO_LISTEN;
+    info.protocols = protocols;
+    info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
+    
+    m_context = lws_create_context(&info);
+    if (!m_context) {
+        if (m_onError) {
+            m_onError("Failed to create LWS context");
+        }
+        return false;
+    }
+    
+    m_running = true;
+    
+    // Start event loop thread
+    m_thread = std::thread(&WebSocketClient::Run, this);
+    
+    // Create connection
+    struct lws_client_connect_info connectInfo = {};
+    connectInfo.context = m_context;
+    connectInfo.address = m_host.c_str();
+    connectInfo.port = m_port;
+    connectInfo.path = m_path.c_str();
+    connectInfo.host = connectInfo.address;
+    connectInfo.origin = connectInfo.address;
+    connectInfo.ssl_connection = (protocol == "wss") ? LCCSCF_USE_SSL : 0;
+    connectInfo.protocol = protocols[0].name;
+    connectInfo.userdata = this;
+    
+    {
+        std::lock_guard<std::mutex> lock(s_instancesMutex);
+        m_wsi = lws_client_connect_via_info(&connectInfo);
+        if (m_wsi) {
+            s_instances[m_wsi] = this;
+        }
+    }
+    
+    if (!m_wsi) {
+        if (m_onError) {
+            m_onError("Failed to create connection");
+        }
+        m_running = false;
+        lws_context_destroy(m_context);
+        m_context = nullptr;
+        return false;
+    }
+    
+    return true;
 }
 
 void WebSocketClient::Disconnect() {
     StopReconnectTimer();
     m_running = false;
+    m_shouldReconnect = false;
     
-    if (m_connected) {
-        websocketpp::lib::error_code ec;
-        m_client.close(m_hdl, websocketpp::close::status::going_away, "Client disconnect", ec);
+    if (m_context) {
+        lws_cancel_service(m_context);
     }
-    
-    m_client.stop();
     
     m_sendCv.notify_all();
     
     if (m_thread.joinable()) {
         m_thread.join();
     }
-    if (m_sendThread.joinable()) {
-        m_sendThread.join();
+    
+    if (m_context) {
+        lws_context_destroy(m_context);
+        m_context = nullptr;
     }
     
     m_connected = false;
+    m_wsi = nullptr;
 }
 
 void WebSocketClient::Run() {
-    try {
-        m_client.run();
-    } catch (const std::exception& e) {
-        if (m_onError) {
-            m_onError("WebSocket runtime error: " + std::string(e.what()));
-        }
+    while (m_running && m_context) {
+        lws_service(m_context, 50);
+        ProcessSendQueue();
     }
 }
 
-void WebSocketClient::OnOpen(ConnectionHdl hdl) {
-    m_hdl = hdl;
-    m_connected = true;
-    m_reconnectDelay = 1000; // Reset reconnect delay
-    
-    if (m_onConnected) {
-        m_onConnected();
+void WebSocketClient::ProcessSendQueue() {
+    if (!m_connected || !m_wsi) {
+        return;
     }
     
-    SendControlMessage("start");
-}
-
-void WebSocketClient::OnClose(ConnectionHdl hdl) {
-    m_connected = false;
-    
-    if (m_onDisconnected) {
-        m_onDisconnected();
-    }
-    
-    if (m_running && !m_reconnecting) {
-        StartReconnectTimer();
+    std::unique_lock<std::mutex> lock(m_sendMutex);
+    if (!m_sendQueue.empty() && !m_currentSendBuffer) {
+        std::string message = m_sendQueue.front();
+        m_sendQueue.pop();
+        lock.unlock();
+        
+        SendQueuedMessage(message);
     }
 }
 
-void WebSocketClient::OnMessage(ConnectionHdl hdl, MessagePtr msg) {
-    if (m_onMessage) {
-        m_onMessage(msg->get_payload());
-    }
-}
-
-void WebSocketClient::OnFail(ConnectionHdl hdl) {
-    m_connected = false;
+void WebSocketClient::SendQueuedMessage(const std::string& message) {
+    std::lock_guard<std::mutex> lock(m_writeMutex);
     
-    if (m_onError) {
-        m_onError("Connection failed");
+    if (!m_connected || !m_wsi) {
+        return;
     }
     
-    if (m_running && !m_reconnecting) {
-        StartReconnectTimer();
-    }
+    // Prepare buffer with LWS header space
+    size_t msgLen = message.length();
+    m_currentSendBuffer = std::make_unique<SendBuffer>();
+    m_currentSendBuffer->data.resize(LWS_PRE + msgLen);
+    
+    // Copy message after LWS_PRE bytes
+    memcpy(m_currentSendBuffer->data.data() + LWS_PRE, message.c_str(), msgLen);
+    m_currentSendBuffer->sent = 0;
+    
+    // Request writeable callback
+    lws_callback_on_writable(m_wsi);
 }
 
 void WebSocketClient::SendAudioData(const AudioChunk& chunk) {
     if (!m_connected) return;
     
-    json msg;
-    msg["type"] = "audio_data";
-    msg["timestamp"] = chunk.timestamp;
-    msg["format"]["sampleRate"] = chunk.format.sampleRate;
-    msg["format"]["channels"] = chunk.format.channels;
-    msg["format"]["bitDepth"] = chunk.format.bitDepth;
-    msg["data"] = base64_encode(chunk.data.data(), chunk.data.size());
-    msg["sourceId"] = chunk.sourceId;
-    msg["sourceName"] = chunk.sourceName;
+    // Convert to binary format for efficiency
+    // Create a simple binary protocol: [format_header][audio_data]
+    std::vector<uint8_t> binaryData;
     
-    std::string payload = msg.dump();
+    // Header: timestamp(8) + sampleRate(4) + channels(4) + bitDepth(4) + sourceIdLen(4) + sourceNameLen(4)
+    size_t headerSize = 8 + 4 + 4 + 4 + 4 + 4;
+    size_t sourceIdLen = chunk.sourceId.length();
+    size_t sourceNameLen = chunk.sourceName.length();
+    size_t totalSize = headerSize + sourceIdLen + sourceNameLen + chunk.data.size();
+    
+    binaryData.reserve(totalSize);
+    
+    // Write header
+    auto writeUint64 = [&](uint64_t val) {
+        for (int i = 0; i < 8; ++i) {
+            binaryData.push_back((val >> (i * 8)) & 0xFF);
+        }
+    };
+    
+    auto writeUint32 = [&](uint32_t val) {
+        for (int i = 0; i < 4; ++i) {
+            binaryData.push_back((val >> (i * 8)) & 0xFF);
+        }
+    };
+    
+    writeUint64(chunk.timestamp);
+    writeUint32(chunk.format.sampleRate);
+    writeUint32(chunk.format.channels);
+    writeUint32(chunk.format.bitDepth);
+    writeUint32(static_cast<uint32_t>(sourceIdLen));
+    writeUint32(static_cast<uint32_t>(sourceNameLen));
+    
+    // Write strings
+    binaryData.insert(binaryData.end(), chunk.sourceId.begin(), chunk.sourceId.end());
+    binaryData.insert(binaryData.end(), chunk.sourceName.begin(), chunk.sourceName.end());
+    
+    // Write audio data
+    binaryData.insert(binaryData.end(), chunk.data.begin(), chunk.data.end());
+    
+    // Send as binary message
+    std::string binaryMessage(reinterpret_cast<const char*>(binaryData.data()), binaryData.size());
     
     {
         std::lock_guard<std::mutex> lock(m_sendMutex);
-        m_sendQueue.push(payload);
+        m_sendQueue.push(binaryMessage);
     }
-    m_sendCv.notify_one();
+    
+    // Request write callback
+    if (m_wsi) {
+        lws_callback_on_writable(m_wsi);
+    }
 }
 
 void WebSocketClient::SendControlMessage(const std::string& type) {
@@ -169,35 +275,120 @@ void WebSocketClient::SendControlMessage(const std::string& type) {
         std::lock_guard<std::mutex> lock(m_sendMutex);
         m_sendQueue.push(payload);
     }
-    m_sendCv.notify_one();
+    
+    // Request write callback
+    if (m_wsi) {
+        lws_callback_on_writable(m_wsi);
+    }
 }
 
-void WebSocketClient::ProcessSendQueue() {
-    while (m_running) {
-        std::unique_lock<std::mutex> lock(m_sendMutex);
-        m_sendCv.wait(lock, [this] { return !m_sendQueue.empty() || !m_running; });
-        
-        while (!m_sendQueue.empty() && m_connected) {
-            std::string msg = m_sendQueue.front();
-            m_sendQueue.pop();
-            lock.unlock();
-            
-            try {
-                websocketpp::lib::error_code ec;
-                m_client.send(m_hdl, msg, websocketpp::frame::opcode::text, ec);
-                
-                if (ec && m_onError) {
-                    m_onError("Send failed: " + ec.message());
-                }
-            } catch (const std::exception& e) {
-                if (m_onError) {
-                    m_onError("Send exception: " + std::string(e.what()));
-                }
-            }
-            
-            lock.lock();
+int WebSocketClient::LwsCallback(struct lws *wsi, enum lws_callback_reasons reason,
+                                void *user, void *in, size_t len) {
+    UNUSED_PARAMETER(user);
+    
+    WebSocketClient* client = nullptr;
+    
+    {
+        std::lock_guard<std::mutex> lock(s_instancesMutex);
+        auto it = s_instances.find(wsi);
+        if (it != s_instances.end()) {
+            client = it->second;
         }
     }
+    
+    if (!client) {
+        return 0;
+    }
+    
+    switch (reason) {
+        case LWS_CALLBACK_CLIENT_ESTABLISHED:
+            blog(LOG_INFO, "WebSocket connection established");
+            client->m_connected = true;
+            client->m_reconnectDelay = 1000; // Reset reconnect delay
+            
+            if (client->m_onConnected) {
+                client->m_onConnected();
+            }
+            
+            client->SendControlMessage("start");
+            break;
+            
+        case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
+            blog(LOG_ERROR, "WebSocket connection error: %s", in ? (char*)in : "unknown");
+            if (client->m_onError && in) {
+                client->m_onError(std::string("Connection error: ") + (char*)in);
+            }
+            client->m_connected = false;
+            
+            {
+                std::lock_guard<std::mutex> lock(s_instancesMutex);
+                s_instances.erase(wsi);
+            }
+            
+            if (client->m_running && client->m_shouldReconnect && !client->m_reconnecting) {
+                client->StartReconnectTimer();
+            }
+            break;
+            
+        case LWS_CALLBACK_CLIENT_CLOSED:
+            blog(LOG_INFO, "WebSocket connection closed");
+            client->m_connected = false;
+            
+            if (client->m_onDisconnected) {
+                client->m_onDisconnected();
+            }
+            
+            {
+                std::lock_guard<std::mutex> lock(s_instancesMutex);
+                s_instances.erase(wsi);
+            }
+            
+            if (client->m_running && client->m_shouldReconnect && !client->m_reconnecting) {
+                client->StartReconnectTimer();
+            }
+            break;
+            
+        case LWS_CALLBACK_CLIENT_RECEIVE:
+            if (client->m_onMessage && in && len > 0) {
+                std::string message(static_cast<char*>(in), len);
+                client->m_onMessage(message);
+            }
+            break;
+            
+        case LWS_CALLBACK_CLIENT_WRITEABLE:
+            {
+                std::lock_guard<std::mutex> lock(client->m_writeMutex);
+                
+                if (client->m_currentSendBuffer) {
+                    size_t msgLen = client->m_currentSendBuffer->data.size() - LWS_PRE;
+                    int written = lws_write(wsi, 
+                                          client->m_currentSendBuffer->data.data() + LWS_PRE,
+                                          msgLen,
+                                          LWS_WRITE_BINARY); // Using binary for audio data
+                    
+                    if (written < 0) {
+                        blog(LOG_ERROR, "Failed to write to WebSocket");
+                        return -1;
+                    }
+                    
+                    client->m_currentSendBuffer.reset();
+                }
+                
+                // Check if there are more messages to send
+                {
+                    std::lock_guard<std::mutex> sendLock(client->m_sendMutex);
+                    if (!client->m_sendQueue.empty()) {
+                        lws_callback_on_writable(wsi);
+                    }
+                }
+            }
+            break;
+            
+        default:
+            break;
+    }
+    
+    return 0;
 }
 
 void WebSocketClient::StartReconnectTimer() {
@@ -208,15 +399,20 @@ void WebSocketClient::StartReconnectTimer() {
     m_reconnectThread = std::thread([this]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(m_reconnectDelay));
         
-        if (!m_running || m_connected) {
+        if (!m_running || m_connected || !m_shouldReconnect) {
             m_reconnecting = false;
             return;
         }
         
         // Exponential backoff
-        m_reconnectDelay = std::min(m_reconnectDelay * 2, m_maxReconnectDelay);
+        m_reconnectDelay = (std::min)(m_reconnectDelay * 2, m_maxReconnectDelay);
         
-        m_client.reset();
+        // Clean up old context
+        if (m_context) {
+            lws_context_destroy(m_context);
+            m_context = nullptr;
+        }
+        
         m_connected = false;
         m_running = false;
         
@@ -224,12 +420,20 @@ void WebSocketClient::StartReconnectTimer() {
             m_thread.join();
         }
         
-        m_running = true;
+        // Clear send queue
+        {
+            std::lock_guard<std::mutex> lock(m_sendMutex);
+            std::queue<std::string> empty;
+            std::swap(m_sendQueue, empty);
+        }
         
-        if (Connect(m_uri)) {
+        if (m_shouldReconnect) {
+            blog(LOG_INFO, "Attempting to reconnect to WebSocket server...");
             if (m_onError) {
                 m_onError("Reconnecting...");
             }
+            
+            Connect(m_uri);
         }
         
         m_reconnecting = false;
@@ -240,6 +444,7 @@ void WebSocketClient::StartReconnectTimer() {
 
 void WebSocketClient::StopReconnectTimer() {
     m_reconnecting = false;
+    m_shouldReconnect = false;
 }
 
 } // namespace obs_audio_to_websocket

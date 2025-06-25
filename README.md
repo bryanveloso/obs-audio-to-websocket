@@ -12,60 +12,77 @@ A lightweight OBS Studio plugin that streams audio from specific sources to WebS
 
 ## Requirements
 
-- OBS Studio 30.x
-- CMake 3.16 or higher
+- OBS Studio 31.x
+- CMake 3.28 or higher
 - Qt6
-- Boost (for WebSocket++)
+- libwebsockets
 - C++17 compatible compiler
 
 ## Building
 
-### Windows
+This plugin uses the official OBS plugin template build system.
+
+### Prerequisites
+
+1. Install Git
+2. Install CMake 3.28 or higher
+3. Install compiler toolchain:
+   - **Windows**: Visual Studio 2022
+   - **macOS**: Xcode 14.0 or higher
+   - **Linux**: GCC 11 or higher
+
+### Building from Source
+
+#### Additional Dependencies
+
+This plugin requires some dependencies beyond what OBS provides:
+
+**Windows:**
+- Install libwebsockets and nlohmann/json (recommended: use vcpkg or build from source)
+- Add the installation path to CMAKE_PREFIX_PATH when configuring
+
+**macOS:**
+```bash
+brew install libwebsockets nlohmann-json
+```
+
+**Linux (Ubuntu/Debian):**
+```bash
+sudo apt-get install libwebsockets-dev nlohmann-json3-dev
+```
+
+#### Build Commands
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/obs-audio-to-websocket.git
+git clone https://github.com/bryanveloso/obs-audio-to-websocket.git
 cd obs-audio-to-websocket
 
-# Download dependencies
-# WebSocket++ (header-only library)
-git clone https://github.com/zaphoyd/websocketpp.git deps/websocketpp
-
-# nlohmann/json (header-only library)
-mkdir -p deps/json/include/nlohmann
-curl -L https://github.com/nlohmann/json/releases/download/v3.11.2/json.hpp -o deps/json/include/nlohmann/json.hpp
-
-# Configure with CMake
-cmake -B build -S . -DCMAKE_PREFIX_PATH="path/to/obs-studio/build" -DQt6_DIR="path/to/Qt/6.x/msvc2019_64/lib/cmake/Qt6"
+# Configure
+cmake --preset windows-x64     # For Windows
+cmake --preset macos           # For macOS
+cmake --preset ubuntu-x86_64   # For Linux
 
 # Build
-cmake --build build --config Release
-
-# Install
-cmake --install build --config Release
+cmake --build --preset windows-x64     # For Windows
+cmake --build --preset macos           # For macOS
+cmake --build --preset ubuntu-x86_64   # For Linux
 ```
 
-### macOS/Linux
+The plugin will be built in the `release` folder.
 
-```bash
-# Install dependencies
-# macOS: brew install boost qt@6
-# Linux: sudo apt-get install libboost-all-dev qt6-base-dev
+### GitHub Actions
 
-# Clone and build
-git clone https://github.com/yourusername/obs-audio-to-websocket.git
-cd obs-audio-to-websocket
+The project includes GitHub Actions workflows for automated building. Simply push to main or create a pull request to trigger builds for all platforms.
 
-# Get dependencies
-git clone https://github.com/zaphoyd/websocketpp.git deps/websocketpp
-mkdir -p deps/json/include/nlohmann
-curl -L https://github.com/nlohmann/json/releases/download/v3.11.2/json.hpp -o deps/json/include/nlohmann/json.hpp
+## Installation
 
-# Configure and build
-cmake -B build -S . -DCMAKE_PREFIX_PATH="/path/to/obs-studio/build"
-cmake --build build
-sudo cmake --install build
-```
+1. Download the latest release for your platform
+2. Extract the archive
+3. Copy the plugin files to your OBS installation:
+   - **Windows**: Copy to `C:\Program Files\obs-studio\obs-plugins\64bit`
+   - **macOS**: Copy to `/Library/Application Support/obs-studio/plugins`
+   - **Linux**: Copy to `/usr/share/obs/obs-plugins`
 
 ## Usage
 
@@ -114,9 +131,9 @@ Settings are saved in OBS configuration:
 - Verify audio levels in OBS mixer
 
 ### Build Issues
-- Make sure all dependencies are installed
-- Use the correct CMake prefix paths for OBS and Qt
-- Check compiler C++17 support
+- Make sure you have the required CMake version (3.28+)
+- Ensure your compiler supports C++17
+- Dependencies are automatically managed by the build system
 
 ## License
 

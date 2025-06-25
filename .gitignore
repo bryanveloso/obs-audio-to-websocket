@@ -1,8 +1,10 @@
 # Build directories
 build/
+build_*
 out/
 cmake-build-*/
 .vs/
+.ccache/
 
 # Dependencies
 deps/
@@ -51,3 +53,7 @@ ui_*.h
 *.dmg
 *.exe
 *.msi
+
+# Release output
+release/
+release-portable/

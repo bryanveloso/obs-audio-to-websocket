@@ -32,17 +32,13 @@ bool obs_module_load(void)
     QMainWindow* main_window = static_cast<QMainWindow*>(obs_frontend_get_main_window());
     if (!main_window) return false;
     
-    // Create menu action
-    QAction* action = new QAction(obs_module_text("AudioStreamerSettings"), main_window);
-    action->setMenuRole(QAction::NoRole);
-    
-    // Connect action to show settings
-    QObject::connect(action, &QAction::triggered, []() {
-        obs_audio_to_websocket::AudioStreamer::Instance().ShowSettings();
-    });
-    
-    // Add to Tools menu
-    obs_frontend_add_tools_menu_item(action);
+    // Add to Tools menu using the C API
+    obs_frontend_add_tools_menu_item(obs_module_text("AudioStreamerSettings"), 
+        [](void *data) {
+            UNUSED_PARAMETER(data);
+            obs_audio_to_websocket::AudioStreamer::Instance().ShowSettings();
+        }, 
+        nullptr);
     
     // Register for frontend events
     obs_frontend_add_event_callback(on_frontend_event, nullptr);

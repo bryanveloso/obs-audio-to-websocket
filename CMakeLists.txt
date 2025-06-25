@@ -1,142 +1,195 @@
-cmake_minimum_required(VERSION 3.16...3.26)
+cmake_minimum_required(VERSION 3.28...3.31)
 
-project(obs-audio-to-websocket VERSION 1.0.0)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/common/bootstrap.cmake" NO_POLICY_SCOPE)
 
+project(${_name} VERSION ${_version})
+
+# Enable C++17 for all platforms
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Find Qt
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
+option(ENABLE_FRONTEND_API "Use obs-frontend-api for UI functionality" ON)
+option(ENABLE_QT "Use Qt functionality" ON)
 
-# Add OBS cmake modules
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(compilerconfig)
+include(defaults)
+include(helpers)
 
-# Find libobs
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+# Find OBS and dependencies
 find_package(libobs REQUIRED)
 find_package(obs-frontend-api REQUIRED)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
 
-# Find Boost for WebSocket++
-find_package(Boost REQUIRED COMPONENTS system thread)
+# Find dependencies
+find_package(nlohmann_json REQUIRED)
+find_package(PkgConfig)
 
-# Find nlohmann/json
-find_package(nlohmann_json QUIET)
+# Find libwebsockets
+if(OS_WINDOWS)
+  # Windows: Look for libwebsockets in .deps or via CMAKE_PREFIX_PATH
+  find_path(LIBWEBSOCKETS_INCLUDE_DIR
+    NAMES libwebsockets.h
+    PATHS
+      ${CMAKE_CURRENT_SOURCE_DIR}/.deps/libwebsockets/include
+      ${CMAKE_PREFIX_PATH}/include
+    NO_DEFAULT_PATH
+  )
+  find_library(LIBWEBSOCKETS_LIBRARY
+    NAMES websockets_static websockets
+    PATHS
+      ${CMAKE_CURRENT_SOURCE_DIR}/.deps/libwebsockets/build/lib/Release
+      ${CMAKE_CURRENT_SOURCE_DIR}/.deps/libwebsockets/build/Release
+      ${CMAKE_PREFIX_PATH}/lib
+      ${CMAKE_PREFIX_PATH}/build/lib/Release
+      ${CMAKE_PREFIX_PATH}/build/Release
+    NO_DEFAULT_PATH
+  )
+elseif(OS_MACOS)
+  find_path(LIBWEBSOCKETS_INCLUDE_DIR
+    NAMES libwebsockets.h
+    PATHS
+      /opt/homebrew/include
+      /usr/local/include
+  )
+
+  find_library(LIBWEBSOCKETS_LIBRARY
+    NAMES websockets
+    PATHS
+      /opt/homebrew/lib
+      /usr/local/lib
+  )
+else()
+  # Linux: Use system libraries
+  if(PKG_CONFIG_FOUND)
+    pkg_check_modules(LIBWEBSOCKETS libwebsockets)
+  endif()
+
+  find_path(LIBWEBSOCKETS_INCLUDE_DIR
+    NAMES libwebsockets.h
+    HINTS ${LIBWEBSOCKETS_INCLUDE_DIRS}
+    PATHS
+      /usr/include
+      /usr/local/include
+  )
+
+  find_library(LIBWEBSOCKETS_LIBRARY
+    NAMES websockets
+    HINTS ${LIBWEBSOCKETS_LIBRARY_DIRS}
+    PATHS
+      /usr/lib
+      /usr/local/lib
+      /usr/lib/x86_64-linux-gnu
+  )
+endif()
+
+if(NOT LIBWEBSOCKETS_INCLUDE_DIR OR NOT LIBWEBSOCKETS_LIBRARY)
+  message(FATAL_ERROR "libwebsockets not found. Please install libwebsockets.")
+endif()
 
 # Plugin files
-set(obs-audio-to-websocket_SOURCES
-    src/plugin-main.cpp
-    src/audio-streamer.cpp
-    src/websocket-client.cpp
-    src/settings-dialog.cpp
-)
+set(plugin_SOURCES src/plugin-main.cpp src/audio-streamer.cpp src/websocket-client.cpp src/settings-dialog.cpp)
 
-set(obs-audio-to-websocket_HEADERS
-    include/obs-audio-to-websocket/audio-streamer.hpp
-    include/obs-audio-to-websocket/websocket-client.hpp
-    include/obs-audio-to-websocket/settings-dialog.hpp
-    include/obs-audio-to-websocket/audio-format.hpp
+set(
+  plugin_HEADERS
+  include/obs-audio-to-websocket/audio-streamer.hpp
+  include/obs-audio-to-websocket/websocket-client.hpp
+  include/obs-audio-to-websocket/settings-dialog.hpp
+  include/obs-audio-to-websocket/audio-format.hpp
 )
 
 # UI files
-set(obs-audio-to-websocket_UI
-    ui/settings-dialog.ui
+set(plugin_UI ui/settings-dialog.ui)
+
+# Add plugin
+add_library(${CMAKE_PROJECT_NAME} MODULE ${plugin_SOURCES} ${plugin_HEADERS})
+
+# Plugin includes
+target_include_directories(
+  ${CMAKE_PROJECT_NAME}
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIBWEBSOCKETS_INCLUDE_DIR}
 )
 
-# Create plugin
-add_library(obs-audio-to-websocket MODULE
-    ${obs-audio-to-websocket_SOURCES}
-    ${obs-audio-to-websocket_HEADERS}
-)
+if(OS_WINDOWS)
+  set(LWS_CONFIG_SEARCH_PATHS
+    "${CMAKE_CURRENT_SOURCE_DIR}/.deps/libwebsockets/build"
+    "${CMAKE_CURRENT_SOURCE_DIR}/.deps/libwebsockets/build/include"
+    "${CMAKE_PREFIX_PATH}/build"
+    "${CMAKE_PREFIX_PATH}/build/include"
+  )
 
-# Qt MOC
-qt6_wrap_cpp(obs-audio-to-websocket_MOC ${obs-audio-to-websocket_HEADERS})
-qt6_wrap_ui(obs-audio-to-websocket_UI_HEADERS ${obs-audio-to-websocket_UI})
+  set(LWS_CONFIG_FOUND FALSE)
+  foreach(search_path ${LWS_CONFIG_SEARCH_PATHS})
+    if(EXISTS "${search_path}/lws_config.h")
+      message(STATUS "Found lws_config.h in ${search_path}")
+      target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${search_path})
+      set(LWS_CONFIG_FOUND TRUE)
+      break()
+    endif()
+  endforeach()
 
-target_sources(obs-audio-to-websocket PRIVATE
-    ${obs-audio-to-websocket_MOC}
-    ${obs-audio-to-websocket_UI_HEADERS}
-)
-
-# Include directories
-target_include_directories(obs-audio-to-websocket PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_BINARY_DIR}
-)
-
-# Find WebSocket++ in various locations
-find_path(WEBSOCKETPP_INCLUDE_DIR
-    NAMES websocketpp/config/asio_no_tls.hpp
-    PATHS
-        ${CMAKE_CURRENT_SOURCE_DIR}/deps/websocketpp
-        ${WEBSOCKETPP_ROOT}
-        /usr/include
-        /usr/local/include
-        /opt/homebrew/include
-)
-
-if(WEBSOCKETPP_INCLUDE_DIR)
-    target_include_directories(obs-audio-to-websocket PRIVATE ${WEBSOCKETPP_INCLUDE_DIR})
-else()
-    message(FATAL_ERROR "WebSocket++ not found. Please install it or set WEBSOCKETPP_ROOT")
+  if(NOT LWS_CONFIG_FOUND)
+    message(WARNING "lws_config.h not found in any of the search paths")
+  endif()
+  
+  # Add SQLite3 headers for Windows (required by libwebsockets headers)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.deps/sqlite3")
+    target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.deps/sqlite3")
+  endif()
 endif()
 
-# Find nlohmann/json in various locations
-find_path(JSON_INCLUDE_DIR
-    NAMES nlohmann/json.hpp
-    PATHS
-        ${CMAKE_CURRENT_SOURCE_DIR}/deps/json/include
-        /usr/include
-        /usr/local/include
-        /opt/homebrew/include
-)
-
-if(JSON_INCLUDE_DIR)
-    target_include_directories(obs-audio-to-websocket PRIVATE ${JSON_INCLUDE_DIR})
-elseif(NOT nlohmann_json_FOUND)
-    message(FATAL_ERROR "nlohmann/json not found. Please install it")
-endif()
 
 # Link libraries
-target_link_libraries(obs-audio-to-websocket PRIVATE
-    OBS::libobs
-    OBS::obs-frontend-api
-    Qt6::Core
-    Qt6::Widgets
-    Boost::system
-    Boost::thread
+target_link_libraries(
+  ${CMAKE_PROJECT_NAME}
+  PRIVATE OBS::libobs OBS::obs-frontend-api Qt6::Core Qt6::Widgets nlohmann_json::nlohmann_json ${LIBWEBSOCKETS_LIBRARY}
 )
-
-if(nlohmann_json_FOUND)
-    target_link_libraries(obs-audio-to-websocket PRIVATE nlohmann_json::nlohmann_json)
-endif()
 
 # Platform-specific settings
-if(WIN32)
-    target_compile_definitions(obs-audio-to-websocket PRIVATE _WEBSOCKETPP_CPP11_STL_)
-    target_link_libraries(obs-audio-to-websocket PRIVATE ws2_32)
+if(OS_LINUX)
+  target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -fpermissive)
+elseif(OS_MACOS)
+  target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -Wno-error=missing-declarations)
+elseif(OS_WINDOWS)
+  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE 
+    _WIN32_WINNT=0x0603
+    _CRT_SECURE_NO_WARNINGS
+  )
+  # Ensure MSVC properly detects C++ mode for libwebsockets headers
+  target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE /Zc:__cplusplus)
 endif()
 
-if(APPLE)
-    set_target_properties(obs-audio-to-websocket PROPERTIES
-        BUNDLE TRUE
-        BUNDLE_EXTENSION "plugin"
-        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/cmake/macos/Info.plist.in"
-    )
+# Windows specific
+if(OS_WINDOWS)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ws2_32)
+
+  if(NOT DEFINED OBS_RUNTIME_DIR)
+    set(OBS_RUNTIME_DIR "${OBS_DIR}/bin/64bit")
+  endif()
+
+  set(OBS_LIBRARY_DESTINATION "${OBS_RUNTIME_DIR}")
+  set(OBS_PLUGIN_DESTINATION "obs-plugins/64bit")
 endif()
 
-# Install
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set(_bit_suffix "64bit")
-else()
-    set(_bit_suffix "32bit")
+# macOS specific
+if(OS_MACOS)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
 endif()
 
-set_target_properties(obs-audio-to-websocket PROPERTIES PREFIX "")
+# Linux specific
+if(OS_LINUX)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE pthread)
+endif()
 
-install(TARGETS obs-audio-to-websocket
-    LIBRARY DESTINATION "obs-plugins/${_bit_suffix}"
-    RUNTIME DESTINATION "obs-plugins/${_bit_suffix}"
+# Set Qt properties
+set_target_properties(
+  ${CMAKE_PROJECT_NAME}
+  PROPERTIES AUTOMOC ON AUTOUIC ON AUTORCC ON
 )
 
-install(DIRECTORY data/
-    DESTINATION "data/obs-plugins/obs-audio-to-websocket"
-)
+# UI search path
+set(CMAKE_AUTOUIC_SEARCH_PATHS ${CMAKE_CURRENT_SOURCE_DIR}/ui)
+
+# Plugin configuration
+set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${CMAKE_PROJECT_NAME})
