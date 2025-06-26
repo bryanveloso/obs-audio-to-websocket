@@ -1,18 +1,18 @@
-; InnoSetup Script for ${PROJECT_NAME}
+; InnoSetup Script for @PROJECT_NAME@
 
-#define MyProjectName "${PROJECT_NAME}"
-#define MyProjectVersion "${PROJECT_VERSION}"
-#define MyPackageVersion "${PROJECT_VERSION}"
-#define MyAuthor "${PLUGIN_AUTHOR}"
+#define MyProjectName "@PROJECT_NAME@"
+#define MyProjectVersion "@PROJECT_VERSION@"
+#define MyPackageVersion "@PROJECT_VERSION@"
+#define MyAuthor "@PLUGIN_AUTHOR@"
 
 [Setup]
 AppId={{7F8E3B4D-9C2A-4E6B-8A1F-3D5C9E7B4A2F}}
 AppName={#MyProjectName}
 AppVersion={#MyProjectVersion}
 AppPublisher={#MyAuthor}
-AppPublisherURL=${PLUGIN_WEBSITE}
-AppSupportURL=${PLUGIN_WEBSITE}
-AppUpdatesURL=${PLUGIN_WEBSITE}
+AppPublisherURL=@PLUGIN_WEBSITE@
+AppSupportURL=@PLUGIN_WEBSITE@
+AppUpdatesURL=@PLUGIN_WEBSITE@
 DefaultDirName={commonappdata}\obs-studio\plugins\{#MyProjectName}
 DisableProgramGroupPage=yes
 DisableDirPage=yes
@@ -38,8 +38,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Source: "..\release\Package\{#MyProjectName}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{cm:ProgramOnTheWeb,${PROJECT_NAME}}"; Filename: "${PLUGIN_WEBSITE}"
-Name: "{group}\{cm:UninstallProgram,${PROJECT_NAME}}"; Filename: "{uninstallexe}"
+Name: "{group}\{cm:ProgramOnTheWeb,{#MyProjectName}}"; Filename: "@PLUGIN_WEBSITE@"
+Name: "{group}\{cm:UninstallProgram,{#MyProjectName}}"; Filename: "{uninstallexe}"
 
 [Registry]
 Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#SetupSetting("AppId")}"; Flags: uninsdeletekey
