@@ -57,3 +57,6 @@ ui_*.h
 # Release output
 release/
 release-portable/
+
+# "Agents"
+CLAUDE.local.md

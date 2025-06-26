@@ -26,143 +26,132 @@ find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
 find_package(nlohmann_json REQUIRED)
 find_package(PkgConfig)
 
-# Find libwebsockets
-if(OS_WINDOWS)
-  # Windows: Look for libwebsockets in .deps or via CMAKE_PREFIX_PATH
-  find_path(LIBWEBSOCKETS_INCLUDE_DIR
-    NAMES libwebsockets.h
-    PATHS
-      ${CMAKE_CURRENT_SOURCE_DIR}/.deps/libwebsockets/include
-      ${CMAKE_PREFIX_PATH}/include
-    NO_DEFAULT_PATH
-  )
-  find_library(LIBWEBSOCKETS_LIBRARY
-    NAMES websockets_static websockets
-    PATHS
-      ${CMAKE_CURRENT_SOURCE_DIR}/.deps/libwebsockets/build/lib/Release
-      ${CMAKE_CURRENT_SOURCE_DIR}/.deps/libwebsockets/build/Release
-      ${CMAKE_PREFIX_PATH}/lib
-      ${CMAKE_PREFIX_PATH}/build/lib/Release
-      ${CMAKE_PREFIX_PATH}/build/Release
-    NO_DEFAULT_PATH
-  )
-elseif(OS_MACOS)
-  find_path(LIBWEBSOCKETS_INCLUDE_DIR
-    NAMES libwebsockets.h
-    PATHS
-      /opt/homebrew/include
-      /usr/local/include
-  )
+# Try to find WebSocket++ and Asio like obs-websocket does
+find_package(Websocketpp 0.8 QUIET)
+find_package(Asio 1.12.1 QUIET)
 
-  find_library(LIBWEBSOCKETS_LIBRARY
-    NAMES websockets
-    PATHS
-      /opt/homebrew/lib
-      /usr/local/lib
-  )
-else()
-  # Linux: Use system libraries
-  if(PKG_CONFIG_FOUND)
-    pkg_check_modules(LIBWEBSOCKETS libwebsockets)
+# If not found, use FetchContent as fallback
+if(NOT Websocketpp_FOUND OR NOT Asio_FOUND)
+  include(FetchContent)
+
+  if(NOT Asio_FOUND)
+    FetchContent_Declare(asio GIT_REPOSITORY https://github.com/chriskohlhoff/asio.git GIT_TAG asio-1-12-1)
   endif()
 
-  find_path(LIBWEBSOCKETS_INCLUDE_DIR
-    NAMES libwebsockets.h
-    HINTS ${LIBWEBSOCKETS_INCLUDE_DIRS}
-    PATHS
-      /usr/include
-      /usr/local/include
-  )
+  if(NOT Websocketpp_FOUND)
+    FetchContent_Declare(
+      websocketpp
+      GIT_REPOSITORY https://github.com/zaphoyd/websocketpp.git
+      GIT_TAG
+        72e2760a4cceef2d270450746ce90efce9374eb8 # 0.8.2 release commit
+    )
+  endif()
 
-  find_library(LIBWEBSOCKETS_LIBRARY
-    NAMES websockets
-    HINTS ${LIBWEBSOCKETS_LIBRARY_DIRS}
-    PATHS
-      /usr/lib
-      /usr/local/lib
-      /usr/lib/x86_64-linux-gnu
-  )
-endif()
+  # Handle Asio first
+  if(NOT Asio_FOUND)
+    FetchContent_MakeAvailable(asio)
+  endif()
 
-if(NOT LIBWEBSOCKETS_INCLUDE_DIR OR NOT LIBWEBSOCKETS_LIBRARY)
-  message(FATAL_ERROR "libwebsockets not found. Please install libwebsockets.")
+  # Handle WebSocket++ with patching
+  if(NOT Websocketpp_FOUND)
+    FetchContent_GetProperties(websocketpp)
+    if(NOT websocketpp_POPULATED)
+      # Allow deprecated FetchContent_Populate for manual patching
+      cmake_policy(PUSH)
+      cmake_policy(SET CMP0169 OLD)
+      FetchContent_Populate(websocketpp)
+      cmake_policy(POP)
+
+      # Patch the CMake minimum version
+      file(READ ${websocketpp_SOURCE_DIR}/CMakeLists.txt WEBSOCKETPP_CMAKE)
+      string(
+        REPLACE
+        "cmake_minimum_required (VERSION 2.6)"
+        "cmake_minimum_required (VERSION 3.5)"
+        WEBSOCKETPP_CMAKE
+        "${WEBSOCKETPP_CMAKE}"
+      )
+      file(WRITE ${websocketpp_SOURCE_DIR}/CMakeLists.txt "${WEBSOCKETPP_CMAKE}")
+
+      # WebSocket++ is header-only, we don't need to build or install anything
+      # Just make the headers available
+      set(websocketpp_POPULATED TRUE CACHE BOOL "WebSocket++ populated" FORCE)
+    endif()
+  endif()
 endif()
 
 # Plugin files
-set(plugin_SOURCES src/plugin-main.cpp src/audio-streamer.cpp src/websocket-client.cpp src/settings-dialog.cpp)
+set(plugin_SOURCES src/plugin-main.cpp src/audio-streamer.cpp src/websocketpp-client.cpp src/settings-dialog.cpp)
 
 set(
   plugin_HEADERS
   include/obs-audio-to-websocket/audio-streamer.hpp
-  include/obs-audio-to-websocket/websocket-client.hpp
+  include/obs-audio-to-websocket/websocketpp-client.hpp
   include/obs-audio-to-websocket/settings-dialog.hpp
   include/obs-audio-to-websocket/audio-format.hpp
 )
 
-# UI files
-set(plugin_UI ui/settings-dialog.ui)
+# UI files (currently none - UI is created programmatically)
+# set(plugin_UI)
 
 # Add plugin
 add_library(${CMAKE_PROJECT_NAME} MODULE ${plugin_SOURCES} ${plugin_HEADERS})
 
 # Plugin includes
-target_include_directories(
-  ${CMAKE_PROJECT_NAME}
-  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIBWEBSOCKETS_INCLUDE_DIR}
-)
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-if(OS_WINDOWS)
-  set(LWS_CONFIG_SEARCH_PATHS
-    "${CMAKE_CURRENT_SOURCE_DIR}/.deps/libwebsockets/build"
-    "${CMAKE_CURRENT_SOURCE_DIR}/.deps/libwebsockets/build/include"
-    "${CMAKE_PREFIX_PATH}/build"
-    "${CMAKE_PREFIX_PATH}/build/include"
-  )
-
-  set(LWS_CONFIG_FOUND FALSE)
-  foreach(search_path ${LWS_CONFIG_SEARCH_PATHS})
-    if(EXISTS "${search_path}/lws_config.h")
-      message(STATUS "Found lws_config.h in ${search_path}")
-      target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${search_path})
-      set(LWS_CONFIG_FOUND TRUE)
-      break()
-    endif()
-  endforeach()
-
-  if(NOT LWS_CONFIG_FOUND)
-    message(WARNING "lws_config.h not found in any of the search paths")
-  endif()
-  
-  # Add SQLite3 headers for Windows (required by libwebsockets headers)
-  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.deps/sqlite3")
-    target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.deps/sqlite3")
-  endif()
+# Add include directories based on how deps were found
+if(Websocketpp_FOUND)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Websocketpp::Websocketpp)
+else()
+  target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${websocketpp_SOURCE_DIR})
 endif()
 
+if(Asio_FOUND)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Asio::Asio)
+else()
+  target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${asio_SOURCE_DIR}/asio/include)
+endif()
+
+# Add OBS dependency includes for SSL support on Windows
+if(OS_WINDOWS)
+  target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_PREFIX_PATH}/include)
+endif()
 
 # Link libraries
 target_link_libraries(
   ${CMAKE_PROJECT_NAME}
-  PRIVATE OBS::libobs OBS::obs-frontend-api Qt6::Core Qt6::Widgets nlohmann_json::nlohmann_json ${LIBWEBSOCKETS_LIBRARY}
+  PRIVATE OBS::libobs OBS::obs-frontend-api Qt6::Core Qt6::Widgets nlohmann_json::nlohmann_json
+)
+
+# WebSocket++ requires these definitions (matching obs-websocket)
+target_compile_definitions(
+  ${CMAKE_PROJECT_NAME}
+  PRIVATE
+    ASIO_STANDALONE # Use standalone Asio, not Boost.Asio
+    $<$<PLATFORM_ID:Windows>:_WEBSOCKETPP_CPP11_STL_> # Only on Windows like obs-websocket
 )
 
 # Platform-specific settings
 if(OS_LINUX)
-  target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -fpermissive)
+  target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -fpermissive -Wno-error=format-overflow)
 elseif(OS_MACOS)
-  target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -Wno-error=missing-declarations)
-elseif(OS_WINDOWS)
-  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE 
-    _WIN32_WINNT=0x0603
-    _CRT_SECURE_NO_WARNINGS
+  target_compile_options(
+    ${CMAKE_PROJECT_NAME}
+    PRIVATE -Wno-error=missing-declarations -Wno-error=deprecated-declarations
   )
-  # Ensure MSVC properly detects C++ mode for libwebsockets headers
-  target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE /Zc:__cplusplus)
+elseif(OS_WINDOWS)
+  target_compile_definitions(
+    ${CMAKE_PROJECT_NAME}
+    PRIVATE _WIN32_WINNT=0x0603 _CRT_SECURE_NO_WARNINGS WIN32_LEAN_AND_MEAN NOMINMAX
+  )
+  # Ensure MSVC properly detects C++ mode and disable specific warnings from WebSocket++
+  target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE /Zc:__cplusplus /wd4267)
 endif()
 
 # Windows specific
 if(OS_WINDOWS)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ws2_32)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ws2_32 mswsock)
 
   if(NOT DEFINED OBS_RUNTIME_DIR)
     set(OBS_RUNTIME_DIR "${OBS_DIR}/bin/64bit")
@@ -193,3 +182,6 @@ set(CMAKE_AUTOUIC_SEARCH_PATHS ${CMAKE_CURRENT_SOURCE_DIR}/ui)
 
 # Plugin configuration
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${CMAKE_PROJECT_NAME})
+
+# Install locale files
+install(DIRECTORY data/locale DESTINATION data/obs-plugins/${CMAKE_PROJECT_NAME} FILES_MATCHING PATTERN "*.ini")

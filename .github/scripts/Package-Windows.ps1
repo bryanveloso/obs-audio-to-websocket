@@ -59,6 +59,14 @@ function Package {
     Remove-Item @RemoveArgs
 
     Log-Group "Archiving ${ProductName}..."
+    
+    # Check if files exist in the expected location
+    if (-not (Test-Path "${ProjectRoot}/release/${Configuration}")) {
+        Write-Error "Build directory not found: ${ProjectRoot}/release/${Configuration}"
+        exit 1
+    }
+    
+    # Create standard package (original structure)
     $CompressArgs = @{
         Path = (Get-ChildItem -Path "${ProjectRoot}/release/${Configuration}" -Exclude "${OutputName}*.*")
         CompressionLevel = 'Optimal'
@@ -66,6 +74,49 @@ function Package {
         Verbose = ($Env:CI -ne $null)
     }
     Compress-Archive -Force @CompressArgs
+    
+    # Create portable package (for direct extraction to OBS directory)
+    Log-Group "Creating portable package..."
+    
+    $PortableDir = "${ProjectRoot}/release/portable"
+    if (Test-Path $PortableDir) {
+        Remove-Item -Path $PortableDir -Recurse -Force
+    }
+    
+    # Create directory structure matching OBS layout
+    New-Item -ItemType Directory -Force -Path "$PortableDir/obs-plugins/64bit" | Out-Null
+    New-Item -ItemType Directory -Force -Path "$PortableDir/data/obs-plugins/${ProductName}/locale" | Out-Null
+    
+    # The Windows build puts files in ${ProductName}/bin/64bit/ subdirectory
+    $PluginBinDir = "${ProjectRoot}/release/${Configuration}/${ProductName}/bin/64bit"
+    $PluginDataDir = "${ProjectRoot}/release/${Configuration}/${ProductName}/data"
+    
+    # Copy plugin files
+    if (Test-Path "$PluginBinDir/${ProductName}.dll") {
+        Copy-Item "$PluginBinDir/${ProductName}.dll" -Destination "$PortableDir/obs-plugins/64bit/"
+        Copy-Item "$PluginBinDir/${ProductName}.pdb" -Destination "$PortableDir/obs-plugins/64bit/" -ErrorAction SilentlyContinue
+    } else {
+        Write-Error "Plugin DLL not found at: $PluginBinDir/${ProductName}.dll"
+        exit 1
+    }
+    
+    # Copy locale files
+    if (Test-Path "$PluginDataDir/locale") {
+        Copy-Item -Path "$PluginDataDir/locale/*" -Destination "$PortableDir/data/obs-plugins/${ProductName}/locale/" -Recurse
+    }
+    
+    # Create portable ZIP
+    $PortableCompressArgs = @{
+        Path = "$PortableDir/*"
+        CompressionLevel = 'Optimal'
+        DestinationPath = "${ProjectRoot}/release/${OutputName}-Portable.zip"
+        Force = $true
+    }
+    Compress-Archive @PortableCompressArgs
+    
+    # Clean up temp directory
+    Remove-Item -Path $PortableDir -Recurse -Force
+    
     Log-Group
 }
 

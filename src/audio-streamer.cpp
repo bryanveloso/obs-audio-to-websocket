@@ -1,8 +1,10 @@
 #include "obs-audio-to-websocket/audio-streamer.hpp"
 #include "obs-audio-to-websocket/settings-dialog.hpp"
 #include <chrono>
+#include <cmath>
 #include <util/platform.h>
 #include <util/threading.h>
+#include <util/config-file.h>
 #include <obs-module.h>
 
 #ifndef UNUSED_PARAMETER
@@ -21,6 +23,7 @@ AudioStreamer::AudioStreamer() : m_lastRateUpdate(std::chrono::steady_clock::now
 
 AudioStreamer::~AudioStreamer()
 {
+	m_shuttingDown = true;
 	Stop();
 }
 
@@ -52,7 +55,7 @@ void AudioStreamer::Stop()
 
 void AudioStreamer::SetAudioSource(const std::string &sourceName)
 {
-	std::lock_guard<std::mutex> lock(m_sourceMutex);
+	std::lock_guard<std::recursive_mutex> lock(m_sourceMutex);
 
 	if (m_audioSourceName == sourceName)
 		return;
@@ -79,10 +82,32 @@ void AudioStreamer::ShowSettings()
 	m_settingsDialog->activateWindow();
 }
 
+void AudioStreamer::LoadSettings()
+{
+	// Load from OBS user config
+#if LIBOBS_API_MAJOR_VER >= 31
+	config_t *config = obs_frontend_get_user_config();
+#else
+	config_t *config = obs_frontend_get_profile_config();
+#endif
+
+	const char *url = config_get_string(config, "AudioStreamer", "WebSocketUrl");
+	if (url && strlen(url) > 0) {
+		std::lock_guard<std::mutex> lock(m_urlMutex);
+		m_wsUrl = url;
+	}
+
+	const char *source = config_get_string(config, "AudioStreamer", "AudioSource");
+	if (source && strlen(source) > 0) {
+		std::lock_guard<std::recursive_mutex> lock(m_sourceMutex);
+		m_audioSourceName = source;
+	}
+}
+
 void AudioStreamer::ConnectToWebSocket()
 {
 	if (!m_wsClient) {
-		m_wsClient = std::make_unique<WebSocketClient>();
+		m_wsClient = std::make_shared<WebSocketPPClient>();
 
 		m_wsClient->SetOnConnected([this]() { OnWebSocketConnected(); });
 		m_wsClient->SetOnDisconnected([this]() { OnWebSocketDisconnected(); });
@@ -90,7 +115,12 @@ void AudioStreamer::ConnectToWebSocket()
 		m_wsClient->SetOnError([this](const std::string &err) { OnWebSocketError(err); });
 	}
 
-	m_wsClient->Connect(m_wsUrl);
+	std::string url;
+	{
+		std::lock_guard<std::mutex> lock(m_urlMutex);
+		url = m_wsUrl;
+	}
+	m_wsClient->Connect(url);
 }
 
 void AudioStreamer::DisconnectFromWebSocket()
@@ -103,43 +133,64 @@ void AudioStreamer::DisconnectFromWebSocket()
 
 void AudioStreamer::AttachAudioSource()
 {
-	std::lock_guard<std::mutex> lock(m_sourceMutex);
+	std::lock_guard<std::recursive_mutex> lock(m_sourceMutex);
 
-	if (m_audioSourceName.empty())
-		return;
-
-	DetachAudioSource();
-
-	m_audioSource = obs_get_source_by_name(m_audioSourceName.c_str());
-	if (!m_audioSource) {
-		emit errorOccurred(
-			QString("Audio source '%1' not found").arg(QString::fromStdString(m_audioSourceName)));
+	if (m_audioSourceName.empty()) {
+		blog(LOG_WARNING, "[Audio to WebSocket] No audio source name specified");
 		return;
 	}
 
-	// Use OBS audio capture API
-	obs_source_add_audio_capture_callback(
-		m_audioSource,
-		[](void *param, obs_source_t *source, const struct audio_data *audio_data, bool muted) {
-			auto *streamer = static_cast<AudioStreamer *>(param);
-			streamer->ProcessAudioData(source, audio_data, muted);
-		},
-		this);
+	// Check if already attached to the same source
+	if (m_audioSource) {
+		const char *current_name = obs_source_get_name(m_audioSource);
+		if (current_name && m_audioSourceName == current_name) {
+			return;
+		}
+	}
+
+	// Detach any existing source first
+	DetachAudioSource();
+
+	// Get the source by name
+	obs_source_t *source = obs_get_source_by_name(m_audioSourceName.c_str());
+	if (!source) {
+		blog(LOG_ERROR, "[Audio to WebSocket] Audio source '%s' not found", m_audioSourceName.c_str());
+		emit errorOccurred(
+			QString("Audio source '%1' not found").arg(QString::fromStdString(m_audioSourceName)));
+		// Stop streaming if source attachment fails
+		if (m_streaming) {
+			Stop();
+		}
+		return;
+	}
+
+	// Verify it's an audio source
+	uint32_t flags = obs_source_get_output_flags(source);
+	if (!(flags & OBS_SOURCE_AUDIO)) {
+		blog(LOG_ERROR, "[Audio to WebSocket] Source '%s' is not an audio source", m_audioSourceName.c_str());
+		emit errorOccurred(
+			QString("Source '%1' is not an audio source").arg(QString::fromStdString(m_audioSourceName)));
+		obs_source_release(source);
+		// Stop streaming if source attachment fails
+		if (m_streaming) {
+			Stop();
+		}
+		return;
+	}
+
+	m_audioSource = source;
+
+	// Use OBS audio capture API with static callback
+	obs_source_add_audio_capture_callback(m_audioSource, AudioCaptureCallback, this);
 }
 
 void AudioStreamer::DetachAudioSource()
 {
-	std::lock_guard<std::mutex> lock(m_sourceMutex);
+	std::lock_guard<std::recursive_mutex> lock(m_sourceMutex);
 
 	if (m_audioSource) {
 		// Remove audio capture callback
-		obs_source_remove_audio_capture_callback(
-			m_audioSource,
-			[](void *param, obs_source_t *source, const struct audio_data *audio_data, bool muted) {
-				auto *streamer = static_cast<AudioStreamer *>(param);
-				streamer->ProcessAudioData(source, audio_data, muted);
-			},
-			this);
+		obs_source_remove_audio_capture_callback(m_audioSource, AudioCaptureCallback, this);
 
 		obs_source_release(m_audioSource);
 		m_audioSource = nullptr;
@@ -155,7 +206,15 @@ void AudioStreamer::AudioCaptureCallback(void *param, obs_source_t *source, cons
 
 void AudioStreamer::ProcessAudioData(obs_source_t *source, const struct audio_data *audio_data, bool muted)
 {
-	if (!m_streaming || muted || !m_wsClient || !m_wsClient->IsConnected()) {
+	static bool first_call = true;
+	static int callback_count = 0;
+	callback_count++;
+
+	first_call = false;
+
+	bool is_connected = m_wsClient && m_wsClient->IsConnected();
+
+	if (m_shuttingDown || !m_streaming || muted || !m_wsClient || !is_connected) {
 		return;
 	}
 
@@ -187,8 +246,8 @@ void AudioStreamer::ProcessAudioData(obs_source_t *source, const struct audio_da
 			float sample = in_ptr[i];
 			// Clamp to [-1, 1] range
 			sample = (std::max)(-1.0f, (std::min)(1.0f, sample));
-			// Convert to 16-bit
-			out_ptr[i * channels + ch] = static_cast<int16_t>(sample * 32767.0f);
+			// Convert to 16-bit with proper rounding
+			out_ptr[i * channels + ch] = static_cast<int16_t>(std::round(sample * 32767.0f));
 		}
 	}
 

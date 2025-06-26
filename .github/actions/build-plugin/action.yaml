@@ -69,14 +69,6 @@ runs:
 
         .github/scripts/build-ubuntu ${build_args}
 
-    - name: Install Windows Dependencies 📦
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        # Install Windows Dependencies
-        $LwsPath = & .github/scripts/Fetch-WindowsDeps.ps1
-        echo "LIBWEBSOCKETS_PATH=$LwsPath" >> $env:GITHUB_ENV
-
     - name: Run Windows Build
       if: runner.os == 'Windows'
       shell: pwsh
@@ -85,9 +77,6 @@ runs:
         if ( $Env:RUNNER_DEBUG -ne $null ) {
           Set-PSDebug -Trace 1
         }
-
-        # Set CMAKE_PREFIX_PATH from previous step
-        $env:CMAKE_PREFIX_PATH = $env:LIBWEBSOCKETS_PATH
 
         $BuildArgs = @{
           Target = '${{ inputs.target }}'

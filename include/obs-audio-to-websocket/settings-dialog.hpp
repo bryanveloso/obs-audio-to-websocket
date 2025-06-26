@@ -24,7 +24,6 @@ public:
 	~SettingsDialog();
 
 private slots:
-	void onConnectToggled();
 	void onStartStopToggled();
 	void onTestConnection();
 	void onAudioSourceChanged(const QString &source);
@@ -38,21 +37,26 @@ private slots:
 	void updateStatus();
 	void populateAudioSources();
 
+protected:
+	void closeEvent(QCloseEvent *event) override;
+
 private:
 	void setupUi();
 	void connectSignals();
 	void loadSettings();
 	void saveSettings();
+	void selectDefaultMicrophoneSource();
 
 	// UI Elements
 	QLineEdit *m_urlEdit;
 	QPushButton *m_testButton;
-	QPushButton *m_connectButton;
 	QComboBox *m_audioSourceCombo;
+	QPushButton *m_refreshButton;
 	QPushButton *m_startStopButton;
+	QProgressBar *m_audioLevelBar;
 	QLabel *m_statusLabel;
 	QLabel *m_dataRateLabel;
-	QProgressBar *m_audioLevelBar;
+	QLabel *m_muteStatusLabel;
 
 	// Update timer
 	std::unique_ptr<QTimer> m_updateTimer;

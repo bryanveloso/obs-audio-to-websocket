@@ -1,22 +1,38 @@
 # OBS Audio to WebSocket Plugin
 
-A lightweight OBS Studio plugin that streams audio from specific sources to WebSocket endpoints for remote processing.
+A lightweight OBS Studio plugin that streams real-time audio data from OBS sources to WebSocket endpoints for remote processing and analysis.
 
 ## Features
 
-- Select and stream audio from any OBS audio source
-- WebSocket streaming with automatic reconnection
-- Low latency audio streaming (<100ms)
-- Real-time data rate monitoring
+- Stream audio from any OBS audio source to WebSocket endpoints
+- Automatic reconnection with exponential backoff
+- Binary protocol for efficient audio data transmission
+- Real-time connection status and data rate monitoring
 - Simple UI integrated into OBS Tools menu
+- Support for multiple audio formats (48kHz, 44.1kHz, etc.)
 
-## Requirements
+## System Requirements
 
-- OBS Studio 31.x
+### For Users
+- OBS Studio 31.0 or higher
+- Windows 10/11, macOS 11+, or Linux
+
+### For Building from Source
 - CMake 3.28 or higher
 - Qt6
-- libwebsockets
+- WebSocket++ 0.8.2
+- Asio 1.12.1 (standalone)
+- nlohmann/json
 - C++17 compatible compiler
+
+## Quick Start
+
+1. Download the latest release for your platform from the [Releases page](https://github.com/bryanveloso/obs-audio-to-websocket/releases)
+2. Install the plugin (see Installation section below)
+3. Restart OBS Studio
+4. Go to Tools → Audio to WebSocket Settings
+5. Enter your WebSocket server URL and select an audio source
+6. Click Connect and Start Streaming
 
 ## Building
 
@@ -33,22 +49,22 @@ This plugin uses the official OBS plugin template build system.
 
 ### Building from Source
 
-#### Additional Dependencies
-
-This plugin requires some dependencies beyond what OBS provides:
+#### Platform-Specific Setup
 
 **Windows:**
-- Install libwebsockets and nlohmann/json (recommended: use vcpkg or build from source)
-- Add the installation path to CMAKE_PREFIX_PATH when configuring
+- Dependencies are automatically downloaded and built by the build scripts
+- No manual installation required
 
 **macOS:**
 ```bash
-brew install libwebsockets nlohmann-json
+brew install nlohmann-json
+# WebSocket++ and Asio will be automatically downloaded if not found
 ```
 
 **Linux (Ubuntu/Debian):**
 ```bash
-sudo apt-get install libwebsockets-dev nlohmann-json3-dev
+sudo apt-get install nlohmann-json3-dev
+# WebSocket++ and Asio will be automatically downloaded if not found
 ```
 
 #### Build Commands
@@ -58,31 +74,43 @@ sudo apt-get install libwebsockets-dev nlohmann-json3-dev
 git clone https://github.com/bryanveloso/obs-audio-to-websocket.git
 cd obs-audio-to-websocket
 
-# Configure
-cmake --preset windows-x64     # For Windows
-cmake --preset macos           # For macOS
-cmake --preset ubuntu-x86_64   # For Linux
+# Configure and build
+cmake --preset windows-x64           # For Windows x64
+cmake --preset macos-arm64          # For macOS (Apple Silicon)
+cmake --preset ubuntu-x86_64        # For Linux x64
 
-# Build
-cmake --build --preset windows-x64     # For Windows
-cmake --build --preset macos           # For macOS
-cmake --build --preset ubuntu-x86_64   # For Linux
+cmake --build --preset windows-x64   # Build for Windows
+cmake --build --preset macos-arm64  # Build for macOS
+cmake --build --preset ubuntu-x86_64 # Build for Linux
 ```
 
-The plugin will be built in the `release` folder.
+The built plugin will be in the `release` folder.
 
 ### GitHub Actions
 
-The project includes GitHub Actions workflows for automated building. Simply push to main or create a pull request to trigger builds for all platforms.
+The project includes GitHub Actions workflows for automated building:
+- Push to `main` branch triggers builds for all platforms
+- Pull requests automatically build and test changes
+- Build artifacts are available for download from successful workflow runs
 
 ## Installation
 
-1. Download the latest release for your platform
-2. Extract the archive
-3. Copy the plugin files to your OBS installation:
-   - **Windows**: Copy to `C:\Program Files\obs-studio\obs-plugins\64bit`
-   - **macOS**: Copy to `/Library/Application Support/obs-studio/plugins`
-   - **Linux**: Copy to `/usr/share/obs/obs-plugins`
+1. Download the appropriate installer or archive from the [Releases page](https://github.com/bryanveloso/obs-audio-to-websocket/releases)
+2. Install using the method for your platform:
+
+   **Windows**: 
+   - Run the installer (.exe) if available, or
+   - Extract the .zip and copy:
+     - `obs-audio-to-websocket.dll` to `C:\Program Files\obs-studio\obs-plugins\64bit\`
+     - Data files to `C:\Program Files\obs-studio\data\obs-plugins\obs-audio-to-websocket\`
+   
+   **macOS**: 
+   - Run the installer (.pkg) if available, or
+   - Extract and copy the `.plugin` bundle to `~/Library/Application Support/obs-studio/plugins/`
+   
+   **Linux**: 
+   - Install the .deb package (Ubuntu/Debian), or
+   - Extract and copy to `/usr/share/obs/obs-plugins/` or `~/.config/obs-studio/plugins/`
 
 ## Usage
 
@@ -95,28 +123,35 @@ The project includes GitHub Actions workflows for automated building. Simply pus
 
 ## WebSocket Protocol
 
-The plugin sends JSON messages with the following format:
+The plugin uses a binary protocol for efficient audio transmission:
 
+### Binary Audio Data Format
+- Header (28 bytes):
+  - `timestamp` (8 bytes): Microseconds since epoch
+  - `sampleRate` (4 bytes): Sample rate in Hz
+  - `channels` (4 bytes): Number of audio channels
+  - `bitDepth` (4 bytes): Bits per sample
+  - `sourceIdLen` (4 bytes): Length of source ID string
+  - `sourceNameLen` (4 bytes): Length of source name string
+- Variable data:
+  - Source ID string
+  - Source name string
+  - Raw PCM audio data
+
+### Control Messages (JSON)
 ```json
 {
-  "type": "audio_data",
-  "timestamp": 1234567890123456,
-  "format": {
-    "sampleRate": 48000,
-    "channels": 2,
-    "bitDepth": 16
-  },
-  "data": "base64_encoded_pcm_data",
-  "sourceId": "mic_aux_1",
-  "sourceName": "Microphone"
+  "type": "start",
+  "timestamp": 1234567890123456
 }
 ```
 
 ## Configuration
 
-Settings are saved in OBS configuration:
-- WebSocket URL
+Settings are automatically saved in OBS configuration:
+- WebSocket URL (default: `ws://localhost:8889/audio`)
 - Selected audio source
+- Connection state is maintained across OBS restarts
 
 ## Troubleshooting
 
@@ -131,9 +166,15 @@ Settings are saved in OBS configuration:
 - Verify audio levels in OBS mixer
 
 ### Build Issues
-- Make sure you have the required CMake version (3.28+)
-- Ensure your compiler supports C++17
-- Dependencies are automatically managed by the build system
+- Ensure CMake 3.28+ is installed
+- Verify your compiler supports C++17
+- On Windows: Visual Studio 2022 with C++ workload required
+- On macOS: Xcode 14+ with command line tools
+- Dependencies are automatically downloaded during build
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit issues or pull requests.
 
 ## License
 

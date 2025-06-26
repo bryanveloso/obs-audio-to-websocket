@@ -7,7 +7,7 @@
 #include <obs.h>
 #include <obs-module.h>
 #include <obs-frontend-api.h>
-#include "websocket-client.hpp"
+#include "websocketpp-client.hpp"
 #include "audio-format.hpp"
 
 namespace obs_audio_to_websocket {
@@ -24,16 +24,28 @@ public:
 	void Stop();
 	bool IsStreaming() const { return m_streaming.load(); }
 
-	void SetWebSocketUrl(const std::string &url) { m_wsUrl = url; }
-	std::string GetWebSocketUrl() const { return m_wsUrl; }
+	void SetWebSocketUrl(const std::string &url)
+	{
+		std::lock_guard<std::mutex> lock(m_urlMutex);
+		m_wsUrl = url;
+	}
+	std::string GetWebSocketUrl() const
+	{
+		std::lock_guard<std::mutex> lock(m_urlMutex);
+		return m_wsUrl;
+	}
 
 	void SetAudioSource(const std::string &sourceName);
 	std::string GetAudioSource() const { return m_audioSourceName; }
 
 	void ShowSettings();
+	void LoadSettings();
 
 	double GetDataRate() const { return m_dataRate.load(); }
 	bool IsConnected() const { return m_wsClient && m_wsClient->IsConnected(); }
+
+	void ConnectToWebSocket();
+	void DisconnectFromWebSocket();
 
 signals:
 	void connectionStatusChanged(bool connected);
@@ -51,8 +63,6 @@ private:
 					 bool muted);
 
 	void ProcessAudioData(obs_source_t *source, const struct audio_data *audio_data, bool muted);
-	void ConnectToWebSocket();
-	void DisconnectFromWebSocket();
 	void AttachAudioSource();
 	void DetachAudioSource();
 
@@ -63,7 +73,7 @@ private:
 
 	void UpdateDataRate(size_t bytes);
 
-	std::unique_ptr<WebSocketClient> m_wsClient;
+	std::shared_ptr<WebSocketPPClient> m_wsClient;
 	std::unique_ptr<SettingsDialog> m_settingsDialog;
 
 	obs_source_t *m_audioSource = nullptr;
@@ -71,9 +81,11 @@ private:
 	std::string m_wsUrl = "ws://localhost:8889/audio";
 
 	std::atomic<bool> m_streaming{false};
+	std::atomic<bool> m_shuttingDown{false};
 	std::atomic<double> m_dataRate{0.0};
 
-	std::mutex m_sourceMutex;
+	std::recursive_mutex m_sourceMutex;
+	mutable std::mutex m_urlMutex;
 
 	// Data rate calculation
 	std::chrono::steady_clock::time_point m_lastRateUpdate;
