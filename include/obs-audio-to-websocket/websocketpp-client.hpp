@@ -44,12 +44,17 @@ public:
 	void SetOnMessage(OnMessageCallback cb) { m_onMessage = cb; }
 	void SetOnError(OnErrorCallback cb) { m_onError = cb; }
 
+	void SetAutoReconnect(bool enable) { m_shouldReconnect = enable; }
+	bool IsAutoReconnectEnabled() const { return m_shouldReconnect; }
+
 private:
 	void Run();
 	void OnOpen(websocketpp::connection_hdl hdl);
 	void OnClose(websocketpp::connection_hdl hdl);
 	void OnMessage(websocketpp::connection_hdl hdl, message_ptr msg);
 	void OnFail(websocketpp::connection_hdl hdl);
+	void ScheduleReconnect();
+	void DoReconnect();
 
 	client m_client;
 	websocketpp::connection_hdl m_hdl;
@@ -60,6 +65,14 @@ private:
 	std::atomic<bool> m_connected{false};
 	std::atomic<bool> m_running{false};
 	std::atomic<bool> m_shouldReconnect{true};
+
+	// Reconnection state
+	std::thread m_reconnectThread;
+	std::atomic<int> m_reconnectAttempts{0};
+	std::atomic<bool> m_reconnecting{false};
+	static constexpr int MAX_RECONNECT_ATTEMPTS = 10;
+	static constexpr int INITIAL_RECONNECT_DELAY_MS = 1000;
+	static constexpr int MAX_RECONNECT_DELAY_MS = 30000;
 
 	std::string m_uri;
 

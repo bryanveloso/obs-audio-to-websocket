@@ -49,6 +49,7 @@ bool WebSocketPPClient::Connect(const std::string &uri)
 	}
 
 	m_uri = uri;
+	m_shouldReconnect = true; // Enable auto-reconnect by default
 
 	// Start the event loop thread first
 	if (!m_threadRunning) {
@@ -95,6 +96,12 @@ bool WebSocketPPClient::Connect(const std::string &uri)
 void WebSocketPPClient::Disconnect()
 {
 	m_shouldReconnect = false;
+	m_reconnecting = false;
+
+	// Wait for any reconnection thread to finish
+	if (m_reconnectThread.joinable()) {
+		m_reconnectThread.join();
+	}
 
 	if (m_connected) {
 		websocketpp::lib::error_code ec;
@@ -269,6 +276,7 @@ void WebSocketPPClient::OnOpen(websocketpp::connection_hdl hdl)
 		m_hdl = hdl; // Update the handle with the connected one
 	}
 	m_connected = true;
+	m_reconnectAttempts = 0; // Reset reconnection attempts on successful connection
 
 	if (m_onConnected) {
 		m_onConnected();
@@ -292,7 +300,10 @@ void WebSocketPPClient::OnClose(websocketpp::connection_hdl hdl)
 		m_onDisconnected();
 	}
 
-	// TODO: Implement reconnection logic if needed
+	// Schedule reconnection if enabled
+	if (m_shouldReconnect && m_running) {
+		ScheduleReconnect();
+	}
 }
 
 void WebSocketPPClient::OnMessage(websocketpp::connection_hdl hdl, message_ptr msg)
@@ -317,8 +328,91 @@ void WebSocketPPClient::OnFail(websocketpp::connection_hdl hdl)
 	if (m_onError) {
 		m_onError("Connection failed: " + ec.message());
 	}
+
+	// Schedule reconnection if enabled
+	if (m_shouldReconnect && m_running) {
+		ScheduleReconnect();
+	}
 }
 
 // TLS handler removed - using non-TLS client for now
+
+void WebSocketPPClient::ScheduleReconnect()
+{
+	if (m_reconnecting.exchange(true)) {
+		// Already reconnecting
+		return;
+	}
+
+	// Clean up any existing reconnect thread
+	if (m_reconnectThread.joinable()) {
+		m_reconnectThread.join();
+	}
+
+	// Start reconnection in a separate thread
+	m_reconnectThread = std::thread(&WebSocketPPClient::DoReconnect, this);
+}
+
+void WebSocketPPClient::DoReconnect()
+{
+	m_reconnectAttempts++;
+
+	// Calculate delay with exponential backoff
+	int delay = INITIAL_RECONNECT_DELAY_MS;
+	for (int i = 1; i < m_reconnectAttempts && delay < MAX_RECONNECT_DELAY_MS; i++) {
+		delay *= 2;
+	}
+	if (delay > MAX_RECONNECT_DELAY_MS) {
+		delay = MAX_RECONNECT_DELAY_MS;
+	}
+
+	blog(LOG_INFO, "[Audio to WebSocket] Reconnecting in %d ms (attempt %d/%d)", delay, m_reconnectAttempts.load(),
+	     MAX_RECONNECT_ATTEMPTS);
+
+	// Wait for the delay
+	std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+
+	// Check if we should still reconnect
+	if (!m_shouldReconnect || !m_running) {
+		m_reconnecting = false;
+		return;
+	}
+
+	// Check if we've exceeded max attempts
+	if (m_reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+		blog(LOG_ERROR, "[Audio to WebSocket] Max reconnection attempts reached. Giving up.");
+		m_reconnecting = false;
+		if (m_onError) {
+			m_onError("Max reconnection attempts reached");
+		}
+		return;
+	}
+
+	// Attempt to reconnect
+	blog(LOG_INFO, "[Audio to WebSocket] Attempting to reconnect...");
+
+	// The Connect method will handle the actual connection
+	// We just need to reset the client and try again
+	try {
+		websocketpp::lib::error_code ec;
+		client::connection_ptr con = m_client.get_connection(m_uri, ec);
+
+		if (ec) {
+			blog(LOG_ERROR, "[Audio to WebSocket] Reconnection failed: %s", ec.message().c_str());
+			// Will retry via OnFail callback
+		} else {
+			{
+				std::lock_guard<std::mutex> lock(m_hdlMutex);
+				m_hdl = con->get_handle();
+			}
+			m_client.connect(con);
+		}
+	} catch (const websocketpp::exception &e) {
+		blog(LOG_ERROR, "[Audio to WebSocket] Reconnection exception: %s", e.what());
+		// Will retry via OnFail callback
+	}
+
+	m_reconnecting = false;
+}
 
 } // namespace obs_audio_to_websocket
