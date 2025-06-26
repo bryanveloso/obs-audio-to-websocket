@@ -117,6 +117,96 @@ function Package {
     # Clean up temp directory
     Remove-Item -Path $PortableDir -Recurse -Force
     
+    # Create package directory for InnoSetup
+    Log-Group "Preparing package for InnoSetup..."
+    
+    $PackageDir = "${ProjectRoot}/release/Package/${ProductName}"
+    if (Test-Path $PackageDir) {
+        Remove-Item -Path $PackageDir -Recurse -Force
+    }
+    
+    # Copy files to package directory (matching InnoSetup expectations)
+    New-Item -ItemType Directory -Force -Path "$PackageDir/bin/64bit" | Out-Null
+    New-Item -ItemType Directory -Force -Path "$PackageDir/data/locale" | Out-Null
+    
+    Copy-Item "$PluginBinDir/${ProductName}.dll" -Destination "$PackageDir/bin/64bit/"
+    Copy-Item "$PluginBinDir/${ProductName}.pdb" -Destination "$PackageDir/bin/64bit/" -ErrorAction SilentlyContinue
+    
+    if (Test-Path "$PluginDataDir/locale") {
+        Copy-Item -Path "$PluginDataDir/locale/*" -Destination "$PackageDir/data/locale/" -Recurse
+    }
+    
+    # Create InnoSetup installer if available
+    Log-Group "Creating InnoSetup installer..."
+    
+    $InnoSetupPath = $null
+    $InnoSetupPaths = @(
+        "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+        "${env:ProgramFiles}\Inno Setup 6\ISCC.exe",
+        "${env:ProgramFiles(x86)}\Inno Setup 5\ISCC.exe",
+        "${env:ProgramFiles}\Inno Setup 5\ISCC.exe"
+    )
+    
+    foreach ($Path in $InnoSetupPaths) {
+        if (Test-Path $Path) {
+            $InnoSetupPath = $Path
+            break
+        }
+    }
+    
+    if ($InnoSetupPath) {
+        # Try to find the generated installer script
+        $PossiblePaths = @(
+            "${ProjectRoot}/build_${Target}/installer.iss",
+            "${ProjectRoot}/build_x64/installer.iss",
+            "${ProjectRoot}/build/installer.iss"
+        )
+        
+        $IssScript = $null
+        foreach ($Path in $PossiblePaths) {
+            if (Test-Path $Path) {
+                $IssScript = $Path
+                break
+            }
+        }
+        
+        if ($IssScript) {
+            Write-Information "Creating installer using InnoSetup..."
+            Write-Information "Using script: $IssScript"
+            
+            # InnoSetup needs to run from the build directory
+            Push-Location (Split-Path $IssScript -Parent)
+            
+            $InstallerArgs = @(
+                (Split-Path $IssScript -Leaf)
+                "/O${ProjectRoot}/release"
+                "/Q"
+            )
+            
+            & $InnoSetupPath @InstallerArgs
+            
+            Pop-Location
+            
+            if ($LASTEXITCODE -eq 0) {
+                Write-Information "Installer created successfully"
+                
+                # Rename the installer to match our convention
+                $InstallerFile = "${ProjectRoot}/release/${OutputName}.exe"
+                if (Test-Path "${ProjectRoot}/release/${ProductName}-${ProductVersion}-windows-x64.exe") {
+                    Move-Item "${ProjectRoot}/release/${ProductName}-${ProductVersion}-windows-x64.exe" $InstallerFile -Force
+                }
+            } else {
+                Write-Warning "InnoSetup compilation failed with exit code $LASTEXITCODE"
+            }
+        } else {
+            Write-Warning "InnoSetup script not found in any of the expected locations"
+            Write-Warning "Searched: $($PossiblePaths -join ', ')"
+        }
+    } else {
+        Write-Information "InnoSetup not found, skipping installer creation"
+        Write-Information "To create installers, install Inno Setup from: https://jrsoftware.org/isinfo.php"
+    }
+    
     Log-Group
 }
 

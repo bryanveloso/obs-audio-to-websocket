@@ -96,6 +96,47 @@ runs:
 
         .github/scripts/package-ubuntu ${package_args}
 
+    - name: Install InnoSetup 📦
+      if: runner.os == 'Windows' && fromJSON(inputs.package)
+      shell: pwsh
+      run: |
+        # Install InnoSetup
+        if ( $Env:RUNNER_DEBUG -ne $null ) {
+          Set-PSDebug -Trace 1
+        }
+
+        # Check if InnoSetup is already available
+        $InnoSetupPath = Get-Command iscc -ErrorAction SilentlyContinue
+        if ($InnoSetupPath) {
+          Write-Host "InnoSetup is already installed at: $($InnoSetupPath.Source)"
+        } else {
+          Write-Host "Installing InnoSetup..."
+          
+          # Use Chocolatey if available (faster)
+          if (Get-Command choco -ErrorAction SilentlyContinue) {
+            choco install innosetup --version=6.2.2 -y --no-progress
+          } else {
+            # Download InnoSetup 6
+            $InnoSetupUrl = "https://files.jrsoftware.org/is/6/innosetup-6.2.2.exe"
+            $InstallerPath = "${env:TEMP}\innosetup-installer.exe"
+            
+            Invoke-WebRequest -Uri $InnoSetupUrl -OutFile $InstallerPath
+            
+            # Install silently
+            Start-Process -FilePath $InstallerPath -ArgumentList "/VERYSILENT", "/NORESTART", "/ALLUSERS", "/DIR=C:\Program Files (x86)\Inno Setup 6" -Wait
+            
+            # Add to PATH for current session
+            $env:PATH = "C:\Program Files (x86)\Inno Setup 6;$env:PATH"
+          }
+          
+          # Verify installation
+          if (Get-Command iscc -ErrorAction SilentlyContinue) {
+            Write-Host "InnoSetup installed successfully"
+          } else {
+            Write-Warning "InnoSetup installation may have failed"
+          }
+        }
+
     - name: Run Windows Packaging
       if: runner.os == 'Windows'
       shell: pwsh
