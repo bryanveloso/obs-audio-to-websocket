@@ -179,7 +179,7 @@ void WebSocketPPClient::SendAudioData(const AudioChunk &chunk)
 
 	binaryData.reserve(totalSize);
 
-	// Write header
+	// Write header (all multi-byte values in little-endian format)
 	auto writeUint64 = [&](uint64_t val) {
 		for (int i = 0; i < 8; ++i) {
 			binaryData.push_back((val >> (i * 8)) & 0xFF);
@@ -203,7 +203,7 @@ void WebSocketPPClient::SendAudioData(const AudioChunk &chunk)
 	binaryData.insert(binaryData.end(), chunk.sourceId.begin(), chunk.sourceId.end());
 	binaryData.insert(binaryData.end(), chunk.sourceName.begin(), chunk.sourceName.end());
 
-	// Write audio data
+	// Write audio data (16-bit signed PCM samples in little-endian format)
 	binaryData.insert(binaryData.end(), chunk.data.begin(), chunk.data.end());
 
 	// Send as binary message directly

@@ -2,6 +2,7 @@
 #include "obs-audio-to-websocket/settings-dialog.hpp"
 #include <chrono>
 #include <cmath>
+#include <algorithm>
 #include <util/platform.h>
 #include <util/threading.h>
 #include <util/config-file.h>
@@ -237,18 +238,57 @@ void AudioStreamer::ProcessAudioData(obs_source_t *source, const struct audio_da
 	chunk.sourceId = obs_source_get_name(source);
 	chunk.sourceName = obs_source_get_name(source);
 
-	// Copy and convert audio data to 16-bit PCM
+	// Copy and convert audio data to 16-bit signed PCM (little-endian)
 	int16_t *out_ptr = reinterpret_cast<int16_t *>(chunk.data.data());
+
+	// Variables for audio level analysis
+	float peak_level = 0.0f;
+	float rms_sum = 0.0f;
+	size_t total_samples = 0;
 
 	for (size_t ch = 0; ch < channels; ++ch) {
 		const float *in_ptr = reinterpret_cast<const float *>(audio_data->data[ch]);
 		for (size_t i = 0; i < frames; ++i) {
 			float sample = in_ptr[i];
+
+			// Track audio levels
+			float abs_sample = std::abs(sample);
+			if (abs_sample > peak_level) {
+				peak_level = abs_sample;
+			}
+			rms_sum += sample * sample;
+			total_samples++;
+
 			// Clamp to [-1, 1] range
 			sample = (std::max)(-1.0f, (std::min)(1.0f, sample));
-			// Convert to 16-bit with proper rounding
+			// Convert to 16-bit signed PCM with proper rounding
+			// Note: This produces little-endian output on x86/x64 systems
 			out_ptr[i * channels + ch] = static_cast<int16_t>(std::round(sample * 32767.0f));
 		}
+	}
+
+	// Calculate RMS level
+	float rms_level = 0.0f;
+	if (total_samples > 0) {
+		rms_level = std::sqrt(rms_sum / total_samples);
+	}
+
+	// Log audio format info only once at startup
+	static bool format_logged = false;
+	if (!format_logged) {
+		format_logged = true;
+		blog(LOG_INFO, "[Audio to WebSocket] Streaming %u Hz, %u ch, 16-bit PCM (LE)", sample_rate, channels);
+	}
+
+	// Only warn about silence, don't log normal levels
+	static int silence_counter = 0;
+	if (peak_level < 0.0001f) { // Essentially silence
+		silence_counter++;
+		if (silence_counter == 500) { // After ~10 seconds of silence
+			blog(LOG_WARNING, "[Audio to WebSocket] No audio detected - check source");
+		}
+	} else {
+		silence_counter = 0;
 	}
 
 	m_wsClient->SendAudioData(chunk);
