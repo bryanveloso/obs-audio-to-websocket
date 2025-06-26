@@ -125,25 +125,125 @@ The project includes GitHub Actions workflows for automated building:
 
 ## WebSocket Protocol
 
-The plugin uses a binary protocol for efficient audio transmission:
+The plugin sends audio data as **binary WebSocket messages** with the following format:
 
-### Binary Audio Data Format
-- Header (28 bytes):
-  - `timestamp` (8 bytes): Microseconds since epoch
-  - `sampleRate` (4 bytes): Sample rate in Hz
-  - `channels` (4 bytes): Number of audio channels
-  - `bitDepth` (4 bytes): Bits per sample
-  - `sourceIdLen` (4 bytes): Length of source ID string
-  - `sourceNameLen` (4 bytes): Length of source name string
-- Variable data:
-  - Source ID string
-  - Source name string
-  - Raw PCM audio data
+### Binary Message Structure
+
+All multi-byte values are in **little-endian** format.
+
+#### Header (28 bytes)
+| Offset | Size | Type   | Description |
+|--------|------|--------|-------------|
+| 0      | 8    | uint64 | Timestamp (nanoseconds since epoch) |
+| 8      | 4    | uint32 | Sample rate (Hz, e.g., 48000) |
+| 12     | 4    | uint32 | Channel count (e.g., 2 for stereo) |
+| 16     | 4    | uint32 | Bit depth (always 16) |
+| 20     | 4    | uint32 | Source ID string length |
+| 24     | 4    | uint32 | Source name string length |
+
+#### Variable Length Data
+| Offset | Size | Type | Description |
+|--------|------|------|-------------|
+| 28     | Variable | UTF-8 | Source ID (no null terminator) |
+| 28 + sourceIdLen | Variable | UTF-8 | Source name (no null terminator) |
+| 28 + sourceIdLen + sourceNameLen | Remaining | Binary | 16-bit signed PCM audio data (little-endian, interleaved) |
+
+### Audio Data Format
+- **Format**: 16-bit signed PCM (NOT float32 or unsigned)
+- **Byte Order**: Little-endian
+- **Channel Layout**: Interleaved (L,R,L,R,... for stereo)
+- **Sample Range**: -32768 to 32767
+
+### Example Client Implementation
+
+#### JavaScript/Node.js
+```javascript
+ws.on('message', (data) => {
+  if (typeof data === 'string') {
+    // Control messages (JSON)
+    const msg = JSON.parse(data);
+    console.log('Control message:', msg.type);
+    return;
+  }
+  
+  // Binary audio data
+  const buffer = Buffer.from(data);
+  let offset = 0;
+  
+  // Read header
+  const timestamp = buffer.readBigUInt64LE(offset); offset += 8;
+  const sampleRate = buffer.readUInt32LE(offset); offset += 4;
+  const channels = buffer.readUInt32LE(offset); offset += 4;
+  const bitDepth = buffer.readUInt32LE(offset); offset += 4;
+  const sourceIdLen = buffer.readUInt32LE(offset); offset += 4;
+  const sourceNameLen = buffer.readUInt32LE(offset); offset += 4;
+  
+  // Read strings
+  const sourceId = buffer.toString('utf8', offset, offset + sourceIdLen);
+  offset += sourceIdLen;
+  const sourceName = buffer.toString('utf8', offset, offset + sourceNameLen);
+  offset += sourceNameLen;
+  
+  // Audio data is the rest
+  const audioData = buffer.slice(offset);
+  
+  // Process 16-bit signed PCM samples
+  const samples = new Int16Array(audioData.buffer, audioData.byteOffset, audioData.length / 2);
+  
+  console.log(`Audio: ${sampleRate}Hz, ${channels}ch, ${samples.length} samples`);
+});
+```
+
+#### Python
+```python
+import struct
+import numpy as np
+
+def parse_audio_message(data):
+    offset = 0
+    
+    # Parse header (little-endian)
+    timestamp = struct.unpack('<Q', data[offset:offset+8])[0]; offset += 8
+    sample_rate = struct.unpack('<I', data[offset:offset+4])[0]; offset += 4
+    channels = struct.unpack('<I', data[offset:offset+4])[0]; offset += 4
+    bit_depth = struct.unpack('<I', data[offset:offset+4])[0]; offset += 4
+    source_id_len = struct.unpack('<I', data[offset:offset+4])[0]; offset += 4
+    source_name_len = struct.unpack('<I', data[offset:offset+4])[0]; offset += 4
+    
+    # Parse strings
+    source_id = data[offset:offset+source_id_len].decode('utf-8')
+    offset += source_id_len
+    source_name = data[offset:offset+source_name_len].decode('utf-8')
+    offset += source_name_len
+    
+    # Parse audio data as 16-bit signed integers
+    audio_bytes = data[offset:]
+    audio_samples = np.frombuffer(audio_bytes, dtype='<i2')  # little-endian int16
+    
+    # Reshape if stereo
+    if channels == 2:
+        audio_samples = audio_samples.reshape(-1, 2)
+    
+    return {
+        'timestamp': timestamp,
+        'sample_rate': sample_rate,
+        'channels': channels,
+        'samples': audio_samples
+    }
+```
 
 ### Control Messages (JSON)
+The plugin also sends JSON control messages:
 ```json
 {
   "type": "start",
+  "timestamp": 1234567890123456
+}
+```
+
+```json
+{
+  "type": "stop",
   "timestamp": 1234567890123456
 }
 ```
