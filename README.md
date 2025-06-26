@@ -1,5 +1,7 @@
 # OBS Audio to WebSocket Plugin
 
+[![Build Status](https://github.com/bryanveloso/obs-audio-to-websocket/actions/workflows/push.yaml/badge.svg)](https://github.com/bryanveloso/obs-audio-to-websocket/actions/workflows/push.yaml)
+
 A lightweight OBS Studio plugin that streams real-time audio data from OBS sources to WebSocket endpoints for remote processing and analysis.
 
 ## Features
