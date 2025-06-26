@@ -3,6 +3,7 @@
 #include <QDialog>
 #include <QTimer>
 #include <memory>
+#include <obs.h>
 
 QT_BEGIN_NAMESPACE
 class QLineEdit;
@@ -47,6 +48,9 @@ private:
 	void saveSettings();
 	void selectDefaultMicrophoneSource();
 
+	static void volumeCallback(void *data, const float magnitude[MAX_AUDIO_CHANNELS],
+				   const float peak[MAX_AUDIO_CHANNELS], const float inputPeak[MAX_AUDIO_CHANNELS]);
+
 	// UI Elements
 	QLineEdit *m_urlEdit;
 	QPushButton *m_testButton;
@@ -63,6 +67,10 @@ private:
 
 	// Reference to audio streamer
 	AudioStreamer *m_streamer;
+
+	// Volume meter
+	obs_volmeter_t *m_volmeter = nullptr;
+	float m_currentPeak = -60.0f;
 };
 
 } // namespace obs_audio_to_websocket

@@ -223,8 +223,29 @@ void AudioStreamer::ProcessAudioData(obs_source_t *source, const struct audio_da
 	if (!aoi)
 		return;
 
+	// Verify audio format
+	if (aoi->format != AUDIO_FORMAT_FLOAT_PLANAR) {
+		static bool format_error_logged = false;
+		if (!format_error_logged) {
+			format_error_logged = true;
+			blog(LOG_ERROR, "[Audio to WebSocket] Unexpected audio format: %d (expected FLOAT_PLANAR)",
+			     aoi->format);
+		}
+		return;
+	}
+
 	uint32_t sample_rate = aoi->samples_per_sec;
 	uint32_t channels = static_cast<uint32_t>(audio_output_get_channels(obs_get_audio()));
+
+	// Validate channel count
+	if (channels > 8) {
+		static bool channel_error_logged = false;
+		if (!channel_error_logged) {
+			channel_error_logged = true;
+			blog(LOG_ERROR, "[Audio to WebSocket] Too many channels: %u (max 8)", channels);
+		}
+		return;
+	}
 
 	// Convert to 16-bit PCM if needed
 	size_t frames = audio_data->frames;
@@ -239,16 +260,24 @@ void AudioStreamer::ProcessAudioData(obs_source_t *source, const struct audio_da
 	chunk.sourceName = obs_source_get_name(source);
 
 	// Copy and convert audio data to 16-bit signed PCM (little-endian)
-	int16_t *out_ptr = reinterpret_cast<int16_t *>(chunk.data.data());
+	uint8_t *out_ptr = chunk.data.data();
 
 	// Variables for audio level analysis
 	float peak_level = 0.0f;
 	float rms_sum = 0.0f;
 	size_t total_samples = 0;
 
-	for (size_t ch = 0; ch < channels; ++ch) {
-		const float *in_ptr = reinterpret_cast<const float *>(audio_data->data[ch]);
-		for (size_t i = 0; i < frames; ++i) {
+	// Process audio frame by frame (interleaved output)
+	size_t out_idx = 0;
+	for (size_t i = 0; i < frames; ++i) {
+		for (size_t ch = 0; ch < channels; ++ch) {
+			// Validate that this channel's data exists
+			if (!audio_data->data[ch]) {
+				blog(LOG_ERROR, "[Audio to WebSocket] Missing data for channel %zu", ch);
+				return;
+			}
+
+			const float *in_ptr = reinterpret_cast<const float *>(audio_data->data[ch]);
 			float sample = in_ptr[i];
 
 			// Track audio levels
@@ -262,8 +291,11 @@ void AudioStreamer::ProcessAudioData(obs_source_t *source, const struct audio_da
 			// Clamp to [-1, 1] range
 			sample = (std::max)(-1.0f, (std::min)(1.0f, sample));
 			// Convert to 16-bit signed PCM with proper rounding
-			// Note: This produces little-endian output on x86/x64 systems
-			out_ptr[i * channels + ch] = static_cast<int16_t>(std::round(sample * 32767.0f));
+			int16_t sample_16 = static_cast<int16_t>(std::round(sample * 32767.0f));
+
+			// Write in little-endian format explicitly
+			out_ptr[out_idx++] = sample_16 & 0xFF;        // Low byte
+			out_ptr[out_idx++] = (sample_16 >> 8) & 0xFF; // High byte
 		}
 	}
 
@@ -278,6 +310,16 @@ void AudioStreamer::ProcessAudioData(obs_source_t *source, const struct audio_da
 	if (!format_logged) {
 		format_logged = true;
 		blog(LOG_INFO, "[Audio to WebSocket] Streaming %u Hz, %u ch, 16-bit PCM (LE)", sample_rate, channels);
+		blog(LOG_INFO, "[Audio to WebSocket] Source: %s, Format: FLOAT_PLANAR", obs_source_get_name(source));
+		blog(LOG_INFO, "[Audio to WebSocket] Frame size: %zu samples, Buffer: %.1fms", frames,
+		     (frames * 1000.0f) / sample_rate);
+
+		// Log first few samples for debugging (only once)
+		if (frames > 0 && channels > 0 && audio_data->data[0]) {
+			const float *first_channel = reinterpret_cast<const float *>(audio_data->data[0]);
+			blog(LOG_INFO, "[Audio to WebSocket] First 5 samples (ch0): %.4f %.4f %.4f %.4f %.4f",
+			     first_channel[0], first_channel[1], first_channel[2], first_channel[3], first_channel[4]);
+		}
 	}
 
 	// Only warn about silence, don't log normal levels

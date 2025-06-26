@@ -16,6 +16,10 @@
 #include <obs.h>
 #include <obs-frontend-api.h>
 
+#ifndef UNUSED_PARAMETER
+#define UNUSED_PARAMETER(param) (void)param
+#endif
+
 namespace obs_audio_to_websocket {
 
 SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent), m_streamer(&AudioStreamer::Instance())
@@ -34,7 +38,14 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent), m_streamer(&A
 	m_updateTimer->start(100); // Update every 100ms
 }
 
-SettingsDialog::~SettingsDialog() {}
+SettingsDialog::~SettingsDialog()
+{
+	if (m_volmeter) {
+		obs_volmeter_remove_callback(m_volmeter, volumeCallback, this);
+		obs_volmeter_destroy(m_volmeter);
+		m_volmeter = nullptr;
+	}
+}
 
 void SettingsDialog::setupUi()
 {
@@ -347,24 +358,28 @@ void SettingsDialog::updateStatus()
 	if (!m_audioSourceCombo->currentText().isEmpty()) {
 		obs_source_t *source = obs_get_source_by_name(m_audioSourceCombo->currentText().toStdString().c_str());
 		if (source) {
-			// Show basic audio activity indicator
-			// This shows if the source is active, not actual audio levels
-			bool active = obs_source_active(source);
-			float volume = obs_source_get_volume(source);
-
-			if (active && volume > 0) {
-				// Pulse the bar to show activity
-				static int pulseValue = 0;
-				static int pulseDirection = 1;
-				pulseValue += pulseDirection * 10;
-				if (pulseValue >= 70)
-					pulseDirection = -1;
-				if (pulseValue <= 30)
-					pulseDirection = 1;
-				m_audioLevelBar->setValue(pulseValue);
-			} else {
-				m_audioLevelBar->setValue(0);
+			// Update volume meter attachment
+			if (m_volmeter) {
+				obs_volmeter_detach_source(m_volmeter);
+				obs_volmeter_destroy(m_volmeter);
+				m_volmeter = nullptr;
 			}
+
+			// Create and attach new volmeter
+			m_volmeter = obs_volmeter_create(OBS_FADER_LOG);
+			obs_volmeter_add_callback(m_volmeter, volumeCallback, this);
+			obs_volmeter_attach_source(m_volmeter, source);
+
+			// Show current peak level
+			float db = m_currentPeak;
+			if (db < -60.0f)
+				db = -60.0f;
+			if (db > 0.0f)
+				db = 0.0f;
+
+			// Convert to 0-100 range
+			int level = static_cast<int>((db + 60.0f) / 60.0f * 100.0f);
+			m_audioLevelBar->setValue(level);
 
 			// Check mute status
 			if (m_streamer->IsStreaming()) {
@@ -383,10 +398,24 @@ void SettingsDialog::updateStatus()
 		} else {
 			m_audioLevelBar->setValue(0);
 			m_muteStatusLabel->hide();
+
+			// Clean up volmeter if source not found
+			if (m_volmeter) {
+				obs_volmeter_remove_callback(m_volmeter, volumeCallback, this);
+				obs_volmeter_destroy(m_volmeter);
+				m_volmeter = nullptr;
+			}
 		}
 	} else {
 		m_audioLevelBar->setValue(0);
 		m_muteStatusLabel->hide();
+
+		// Clean up volmeter if no source selected
+		if (m_volmeter) {
+			obs_volmeter_remove_callback(m_volmeter, volumeCallback, this);
+			obs_volmeter_destroy(m_volmeter);
+			m_volmeter = nullptr;
+		}
 	}
 }
 
@@ -475,6 +504,25 @@ void SettingsDialog::selectDefaultMicrophoneSource()
 			return;
 		}
 	}
+}
+
+void SettingsDialog::volumeCallback(void *data, const float magnitude[MAX_AUDIO_CHANNELS],
+				    const float peak[MAX_AUDIO_CHANNELS], const float inputPeak[MAX_AUDIO_CHANNELS])
+{
+	UNUSED_PARAMETER(magnitude);
+	UNUSED_PARAMETER(inputPeak);
+
+	auto *dialog = static_cast<SettingsDialog *>(data);
+
+	// Use the highest peak from all channels
+	float maxPeak = -60.0f;
+	for (int i = 0; i < MAX_AUDIO_CHANNELS; i++) {
+		if (peak[i] > maxPeak) {
+			maxPeak = peak[i];
+		}
+	}
+
+	dialog->m_currentPeak = maxPeak;
 }
 
 } // namespace obs_audio_to_websocket
