@@ -46,6 +46,8 @@ public:
 
 	void SetAutoReconnect(bool enable) { m_shouldReconnect = enable; }
 	bool IsAutoReconnectEnabled() const { return m_shouldReconnect; }
+	bool IsReconnecting() const { return m_reconnecting.load(); }
+	int GetReconnectAttempts() const { return m_reconnectAttempts.load(); }
 
 private:
 	void Run();
@@ -70,9 +72,6 @@ private:
 	std::thread m_reconnectThread;
 	std::atomic<int> m_reconnectAttempts{0};
 	std::atomic<bool> m_reconnecting{false};
-	static constexpr int MAX_RECONNECT_ATTEMPTS = 10;
-	static constexpr int INITIAL_RECONNECT_DELAY_MS = 1000;
-	static constexpr int MAX_RECONNECT_DELAY_MS = 30000;
 
 	std::string m_uri;
 

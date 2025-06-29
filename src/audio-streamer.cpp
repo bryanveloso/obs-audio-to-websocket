@@ -16,6 +16,7 @@ namespace obs_audio_to_websocket {
 
 AudioStreamer &AudioStreamer::Instance()
 {
+	// Thread-safe since C++11 (guaranteed by standard)
 	static AudioStreamer instance;
 	return instance;
 }
@@ -142,22 +143,18 @@ void AudioStreamer::AttachAudioSource()
 	}
 
 	// Check if already attached to the same source
-	if (m_audioSource) {
-		const char *current_name = obs_source_get_name(m_audioSource);
-		if (current_name && m_audioSourceName == current_name) {
-			return;
-		}
+	if (m_audioSource && m_audioSourceName == m_audioSource.get_name()) {
+		return;
 	}
 
 	// Detach any existing source first
 	DetachAudioSource();
 
 	// Get the source by name
-	obs_source_t *source = obs_get_source_by_name(m_audioSourceName.c_str());
-	if (!source) {
+	m_audioSource = OBSSourceWrapper(m_audioSourceName);
+	if (!m_audioSource) {
 		blog(LOG_ERROR, "[Audio to WebSocket] Audio source '%s' not found", m_audioSourceName.c_str());
-		emit errorOccurred(
-			QString("Audio source '%1' not found").arg(QString::fromStdString(m_audioSourceName)));
+		emit errorOccurred(QString("Audio source not found"));
 		// Stop streaming if source attachment fails
 		if (m_streaming) {
 			Stop();
@@ -166,12 +163,10 @@ void AudioStreamer::AttachAudioSource()
 	}
 
 	// Verify it's an audio source
-	uint32_t flags = obs_source_get_output_flags(source);
-	if (!(flags & OBS_SOURCE_AUDIO)) {
+	if (!m_audioSource.is_audio_source()) {
 		blog(LOG_ERROR, "[Audio to WebSocket] Source '%s' is not an audio source", m_audioSourceName.c_str());
-		emit errorOccurred(
-			QString("Source '%1' is not an audio source").arg(QString::fromStdString(m_audioSourceName)));
-		obs_source_release(source);
+		emit errorOccurred(QString("Selected source is not an audio source"));
+		m_audioSource.reset();
 		// Stop streaming if source attachment fails
 		if (m_streaming) {
 			Stop();
@@ -179,10 +174,8 @@ void AudioStreamer::AttachAudioSource()
 		return;
 	}
 
-	m_audioSource = source;
-
 	// Use OBS audio capture API with static callback
-	obs_source_add_audio_capture_callback(m_audioSource, AudioCaptureCallback, this);
+	obs_source_add_audio_capture_callback(m_audioSource.get(), AudioCaptureCallback, this);
 }
 
 void AudioStreamer::DetachAudioSource()
@@ -191,10 +184,10 @@ void AudioStreamer::DetachAudioSource()
 
 	if (m_audioSource) {
 		// Remove audio capture callback
-		obs_source_remove_audio_capture_callback(m_audioSource, AudioCaptureCallback, this);
+		obs_source_remove_audio_capture_callback(m_audioSource.get(), AudioCaptureCallback, this);
 
-		obs_source_release(m_audioSource);
-		m_audioSource = nullptr;
+		// RAII wrapper will handle release
+		m_audioSource.reset();
 	}
 }
 
@@ -238,7 +231,7 @@ void AudioStreamer::ProcessAudioData(obs_source_t *source, const struct audio_da
 	uint32_t channels = static_cast<uint32_t>(audio_output_get_channels(obs_get_audio()));
 
 	// Validate channel count
-	if (channels > 8) {
+	if (channels > 8) { // OBS max is 8 channels
 		static bool channel_error_logged = false;
 		if (!channel_error_logged) {
 			channel_error_logged = true;
@@ -324,16 +317,18 @@ void AudioStreamer::ProcessAudioData(obs_source_t *source, const struct audio_da
 
 	// Only warn about silence, don't log normal levels
 	static int silence_counter = 0;
-	if (peak_level < 0.0001f) { // Essentially silence
+	if (peak_level < 0.0001f) { // Essentially silence (-80 dB)
 		silence_counter++;
-		if (silence_counter == 500) { // After ~10 seconds of silence
+		if (silence_counter == 500) { // After ~10 seconds at 48kHz
 			blog(LOG_WARNING, "[Audio to WebSocket] No audio detected - check source");
 		}
 	} else {
 		silence_counter = 0;
 	}
 
-	m_wsClient->SendAudioData(chunk);
+	if (m_wsClient) {
+		m_wsClient->SendAudioData(chunk);
+	}
 	UpdateDataRate(data_size);
 }
 
@@ -361,6 +356,12 @@ void AudioStreamer::OnWebSocketMessage(const std::string &message)
 void AudioStreamer::OnWebSocketError(const std::string &error)
 {
 	emit errorOccurred(QString::fromStdString(error));
+
+	// Stop streaming if connection permanently failed
+	if (error.find("Max reconnection attempts exceeded") != std::string::npos) {
+		blog(LOG_ERROR, "[Audio to WebSocket] Connection permanently failed, stopping stream");
+		Stop();
+	}
 }
 
 void AudioStreamer::UpdateDataRate(size_t bytes)

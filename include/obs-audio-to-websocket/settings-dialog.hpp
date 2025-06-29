@@ -71,6 +71,10 @@ private:
 	// Volume meter
 	obs_volmeter_t *m_volmeter = nullptr;
 	float m_currentPeak = -60.0f;
+
+	// Error dialog rate limiting
+	std::chrono::steady_clock::time_point m_lastErrorTime;
+	QString m_lastErrorMessage;
 };
 
 } // namespace obs_audio_to_websocket

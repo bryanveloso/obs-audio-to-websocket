@@ -1,6 +1,8 @@
 #include "obs-audio-to-websocket/settings-dialog.hpp"
 #include "obs-audio-to-websocket/audio-streamer.hpp"
 #include "obs-audio-to-websocket/websocketpp-client.hpp"
+#include "obs-audio-to-websocket/obs-source-wrapper.hpp"
+#include <chrono>
 #include <util/config-file.h>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -13,6 +15,7 @@
 #include <QProgressBar>
 #include <QMessageBox>
 #include <QCloseEvent>
+#include <QUrl>
 #include <obs.h>
 #include <obs-frontend-api.h>
 
@@ -231,6 +234,14 @@ void SettingsDialog::onTestConnection()
 		return;
 	}
 
+	// Basic URL validation - check for host and path
+	QUrl qurl(url);
+	if (!qurl.isValid() || qurl.host().isEmpty()) {
+		QMessageBox::warning(this, "Invalid URL",
+				     "Please enter a valid WebSocket URL.\nExample: ws://localhost:8889/audio");
+		return;
+	}
+
 	// Test WebSocket connection without affecting current state
 	m_testButton->setEnabled(false);
 	m_testButton->setText("Testing...");
@@ -255,34 +266,34 @@ void SettingsDialog::onTestConnection()
 
 	testClient->Connect(url.toStdString());
 
-	QTimer::singleShot(2000, this, [this, testClient, originalStatus, originalStyle, errorMsg]() {
-		m_testButton->setEnabled(true);
-		m_testButton->setText("Test Connection");
+	QTimer::singleShot(2000, this, // 2 second timeout
+			   [this, testClient, originalStatus, originalStyle, errorMsg]() {
+				   m_testButton->setEnabled(true);
+				   m_testButton->setText("Test Connection");
 
-		if (testClient->IsConnected()) {
-			testClient->Disconnect();
-			m_statusLabel->setText("Test successful!");
-			m_statusLabel->setStyleSheet("QLabel { font-weight: bold; color: green; }");
-			QMessageBox::information(this, "Connection Test", "Connection test successful!");
-		} else {
-			m_statusLabel->setText("Test failed!");
-			m_statusLabel->setStyleSheet("QLabel { font-weight: bold; color: red; }");
+				   if (testClient->IsConnected()) {
+					   testClient->Disconnect();
+					   m_statusLabel->setText("Test successful!");
+					   m_statusLabel->setStyleSheet("QLabel { font-weight: bold; color: green; }");
+					   QMessageBox::information(this, "Connection Test",
+								    "Connection test successful!");
+				   } else {
+					   m_statusLabel->setText("Test failed!");
+					   m_statusLabel->setStyleSheet("QLabel { font-weight: bold; color: red; }");
 
-			QString message = "Connection test failed.";
-			if (!errorMsg.isEmpty()) {
-				message += "\n\nError: " + errorMsg;
-			}
-			message += "\n\nPlease check that the WebSocket server is running.";
+					   QString message = "Connection test failed.";
+					   if (!errorMsg.isEmpty()) {
+						   message += " " + errorMsg;
+					   }
+					   QMessageBox::warning(this, "Connection Test", message);
+				   }
 
-			QMessageBox::warning(this, "Connection Test", message);
-		}
-
-		// Restore original status after a delay
-		QTimer::singleShot(2000, this, [this, originalStatus, originalStyle]() {
-			m_statusLabel->setText(originalStatus);
-			m_statusLabel->setStyleSheet(originalStyle);
-		});
-	});
+				   // Restore original status after a delay
+				   QTimer::singleShot(2000, this, [this, originalStatus, originalStyle]() {
+					   m_statusLabel->setText(originalStatus);
+					   m_statusLabel->setStyleSheet(originalStyle);
+				   });
+			   });
 }
 
 void SettingsDialog::onAudioSourceChanged(const QString &source)
@@ -307,8 +318,17 @@ void SettingsDialog::updateConnectionStatus(bool connected)
 			m_statusLabel->setText("Streaming (Connected)");
 			m_statusLabel->setStyleSheet("QLabel { font-weight: bold; color: green; }");
 		} else {
-			m_statusLabel->setText("Streaming (Reconnecting...)");
-			m_statusLabel->setStyleSheet("QLabel { font-weight: bold; color: orange; }");
+			// Check if we're in reconnection phase
+			auto wsClient = m_streamer->GetWebSocketClient();
+			if (wsClient && wsClient->IsReconnecting()) {
+				int attempts = wsClient->GetReconnectAttempts();
+				m_statusLabel->setText(
+					QString("Streaming (Reconnecting... attempt %1/10)").arg(attempts));
+				m_statusLabel->setStyleSheet("QLabel { font-weight: bold; color: orange; }");
+			} else {
+				m_statusLabel->setText("Streaming (Disconnected)");
+				m_statusLabel->setStyleSheet("QLabel { font-weight: bold; color: red; }");
+			}
 		}
 	} else {
 		m_statusLabel->setText("Not Streaming");
@@ -349,7 +369,38 @@ void SettingsDialog::updateDataRate(double kbps)
 
 void SettingsDialog::showError(const QString &error)
 {
-	QMessageBox::warning(this, "Audio to WebSocket Error", error);
+	// Rate limit error dialogs to prevent spam
+	auto now = std::chrono::steady_clock::now();
+	auto timeSinceLastError = std::chrono::duration_cast<std::chrono::seconds>(now - m_lastErrorTime);
+
+	// Skip if same error within 5 seconds
+	if (error == m_lastErrorMessage && timeSinceLastError.count() < 5) {
+		return;
+	}
+
+	m_lastErrorTime = now;
+	m_lastErrorMessage = error;
+
+	// Handle "max reconnection attempts" specially - this should stop streaming
+	if (error.contains("Max reconnection attempts exceeded")) {
+		m_statusLabel->setText("Not Streaming (Connection Failed)");
+		m_statusLabel->setStyleSheet("QLabel { font-weight: bold; color: red; }");
+		// Show one final dialog to inform the user
+		QMessageBox::warning(this, "Connection Lost", "Connection failed. Streaming stopped.");
+		return;
+	}
+
+	// Only show dialog boxes for critical errors, not connection failures during streaming
+	// Connection status is already shown in the UI status label
+	if (!m_streamer->IsStreaming()) {
+		// Show dialog only when not actively streaming (e.g., during initial setup)
+		QMessageBox::warning(this, "Audio to WebSocket Error", error);
+	} else {
+		// During streaming, just update the status label instead of showing a dialog
+		m_statusLabel->setText("Streaming (Connection Error)");
+		m_statusLabel->setStyleSheet("QLabel { font-weight: bold; color: red; }");
+		blog(LOG_WARNING, "[Audio to WebSocket] Error during streaming: %s", error.toStdString().c_str());
+	}
 }
 
 void SettingsDialog::updateStatus()

@@ -81,7 +81,14 @@ if(NOT Websocketpp_FOUND OR NOT Asio_FOUND)
 endif()
 
 # Plugin files
-set(plugin_SOURCES src/plugin-main.cpp src/audio-streamer.cpp src/websocketpp-client.cpp src/settings-dialog.cpp)
+set(
+  plugin_SOURCES
+  src/plugin-main.cpp
+  src/audio-streamer.cpp
+  src/websocketpp-client.cpp
+  src/settings-dialog.cpp
+  src/audio-format.cpp
+)
 
 set(
   plugin_HEADERS
@@ -89,6 +96,8 @@ set(
   include/obs-audio-to-websocket/websocketpp-client.hpp
   include/obs-audio-to-websocket/settings-dialog.hpp
   include/obs-audio-to-websocket/audio-format.hpp
+  include/obs-audio-to-websocket/obs-source-wrapper.hpp
+  include/obs-audio-to-websocket/constants.hpp
 )
 
 # UI files (currently none - UI is created programmatically)

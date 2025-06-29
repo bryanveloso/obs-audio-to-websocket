@@ -9,6 +9,7 @@
 #include <obs-frontend-api.h>
 #include "websocketpp-client.hpp"
 #include "audio-format.hpp"
+#include "obs-source-wrapper.hpp"
 
 namespace obs_audio_to_websocket {
 
@@ -43,6 +44,7 @@ public:
 
 	double GetDataRate() const { return m_dataRate.load(); }
 	bool IsConnected() const { return m_wsClient && m_wsClient->IsConnected(); }
+	std::shared_ptr<WebSocketPPClient> GetWebSocketClient() const { return m_wsClient; }
 
 	void ConnectToWebSocket();
 	void DisconnectFromWebSocket();
@@ -76,7 +78,7 @@ private:
 	std::shared_ptr<WebSocketPPClient> m_wsClient;
 	std::unique_ptr<SettingsDialog> m_settingsDialog;
 
-	obs_source_t *m_audioSource = nullptr;
+	OBSSourceWrapper m_audioSource;
 	std::string m_audioSourceName;
 	std::string m_wsUrl = "ws://localhost:8889/audio";
 

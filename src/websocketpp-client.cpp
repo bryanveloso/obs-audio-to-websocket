@@ -1,5 +1,6 @@
 // CRITICAL: Ensure ASIO_STANDALONE is defined (should come from header)
 #include "obs-audio-to-websocket/websocketpp-client.hpp"
+#include "obs-audio-to-websocket/constants.hpp"
 #include <obs-module.h>
 #include <nlohmann/json.hpp>
 #include <asio/error_code.hpp>
@@ -320,12 +321,16 @@ void WebSocketPPClient::OnFail(websocketpp::connection_hdl hdl)
 
 	// Get detailed error information
 	client::connection_ptr con = m_client.get_con_from_hdl(hdl);
-	websocketpp::lib::error_code ec = con->get_ec();
+	websocketpp::lib::error_code ec;
+	if (con) {
+		ec = con->get_ec();
+	}
 
 	blog(LOG_ERROR, "[Audio to WebSocket] Connection failed: %s (code: %d)", ec.message().c_str(), ec.value());
 	m_connected = false;
 
-	if (m_onError) {
+	// Only call error callback for initial connection attempts, not during automatic reconnection
+	if (!m_reconnecting && m_onError) {
 		m_onError("Connection failed: " + ec.message());
 	}
 
@@ -358,16 +363,16 @@ void WebSocketPPClient::DoReconnect()
 	m_reconnectAttempts++;
 
 	// Calculate delay with exponential backoff
-	int delay = INITIAL_RECONNECT_DELAY_MS;
-	for (int i = 1; i < m_reconnectAttempts && delay < MAX_RECONNECT_DELAY_MS; i++) {
+	int delay = constants::INITIAL_RECONNECT_DELAY_MS;
+	for (int i = 1; i < m_reconnectAttempts && delay < constants::MAX_RECONNECT_DELAY_MS; i++) {
 		delay *= 2;
 	}
-	if (delay > MAX_RECONNECT_DELAY_MS) {
-		delay = MAX_RECONNECT_DELAY_MS;
+	if (delay > constants::MAX_RECONNECT_DELAY_MS) {
+		delay = constants::MAX_RECONNECT_DELAY_MS;
 	}
 
 	blog(LOG_INFO, "[Audio to WebSocket] Reconnecting in %d ms (attempt %d/%d)", delay, m_reconnectAttempts.load(),
-	     MAX_RECONNECT_ATTEMPTS);
+	     constants::MAX_RECONNECT_ATTEMPTS);
 
 	// Wait for the delay
 	std::this_thread::sleep_for(std::chrono::milliseconds(delay));
@@ -379,11 +384,12 @@ void WebSocketPPClient::DoReconnect()
 	}
 
 	// Check if we've exceeded max attempts
-	if (m_reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+	if (m_reconnectAttempts > constants::MAX_RECONNECT_ATTEMPTS) {
 		blog(LOG_ERROR, "[Audio to WebSocket] Max reconnection attempts reached. Giving up.");
 		m_reconnecting = false;
+		// Notify that connection has permanently failed
 		if (m_onError) {
-			m_onError("Max reconnection attempts reached");
+			m_onError("Connection lost: Max reconnection attempts exceeded");
 		}
 		return;
 	}
