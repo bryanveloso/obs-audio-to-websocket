@@ -7,9 +7,6 @@
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE("obs-audio-to-websocket", "en-US")
 
-// Keep track of menu item for cleanup
-static void *g_tools_menu_item = nullptr;
-
 void on_frontend_event(enum obs_frontend_event event, void *data)
 {
 	UNUSED_PARAMETER(data);
@@ -39,8 +36,7 @@ bool obs_module_load(void)
 	// Load saved settings
 	obs_audio_to_websocket::AudioStreamer::Instance().LoadSettings();
 
-	// Add to Tools menu using the C API
-	g_tools_menu_item = obs_frontend_add_tools_menu_item(
+	obs_frontend_add_tools_menu_item(
 		obs_module_text("AudioStreamerSettings"),
 		[](void *data) {
 			UNUSED_PARAMETER(data);
@@ -59,12 +55,6 @@ void obs_module_unload(void)
 {
 	obs_audio_to_websocket::AudioStreamer::Instance().Stop();
 	obs_frontend_remove_event_callback(on_frontend_event, nullptr);
-
-	// Remove menu item
-	if (g_tools_menu_item) {
-		obs_frontend_remove_tools_menu_item(g_tools_menu_item);
-		g_tools_menu_item = nullptr;
-	}
 
 	blog(LOG_INFO, "[Audio to WebSocket] Plugin unloaded");
 }

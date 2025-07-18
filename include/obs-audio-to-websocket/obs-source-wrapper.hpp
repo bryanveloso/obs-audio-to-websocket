@@ -16,7 +16,7 @@ public:
 	explicit OBSSourceWrapper(obs_source_t *source, bool add_ref = true) : m_source(source)
 	{
 		if (m_source && add_ref) {
-			obs_source_addref(m_source);
+			m_source = obs_source_get_ref(m_source);
 		}
 	}
 
@@ -59,7 +59,7 @@ public:
 		}
 		m_source = source;
 		if (m_source && add_ref) {
-			obs_source_addref(m_source);
+			m_source = obs_source_get_ref(m_source);
 		}
 	}
 
