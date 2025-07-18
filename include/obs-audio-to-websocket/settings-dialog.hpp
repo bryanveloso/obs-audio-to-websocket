@@ -3,6 +3,7 @@
 #include <QDialog>
 #include <QTimer>
 #include <memory>
+#include <chrono>
 #include <obs.h>
 
 QT_BEGIN_NAMESPACE

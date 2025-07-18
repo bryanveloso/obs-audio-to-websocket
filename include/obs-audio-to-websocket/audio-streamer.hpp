@@ -4,6 +4,7 @@
 #include <memory>
 #include <atomic>
 #include <mutex>
+#include <chrono>
 #include <obs.h>
 #include <obs-module.h>
 #include <obs-frontend-api.h>
