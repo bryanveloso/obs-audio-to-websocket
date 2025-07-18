@@ -198,9 +198,10 @@ void SettingsDialog::saveSettings()
 	config_t *config = obs_frontend_get_profile_config();
 #endif
 
-	config_set_string(config, "AudioStreamer", "WebSocketUrl", url.toStdString().c_str());
-	config_set_string(config, "AudioStreamer", "AudioSource",
-			  m_audioSourceCombo->currentText().toStdString().c_str());
+	std::string urlStdString = url.toStdString();
+	std::string audioSourceStdString = m_audioSourceCombo->currentText().toStdString();
+	config_set_string(config, "AudioStreamer", "WebSocketUrl", urlStdString.c_str());
+	config_set_string(config, "AudioStreamer", "AudioSource", audioSourceStdString.c_str());
 
 	config_save(config);
 }
