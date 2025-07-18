@@ -71,9 +71,10 @@ bool WebSocketPPClient::Connect(const std::string &uri)
 		client::connection_ptr con = m_client.get_connection(uri, ec);
 
 		if (ec) {
-			blog(LOG_ERROR, "[Audio to WebSocket] Could not create connection: %s", ec.message().c_str());
+			std::string errorMessage = ec.message();
+			blog(LOG_ERROR, "[Audio to WebSocket] Could not create connection: %s", errorMessage.c_str());
 			if (m_onError) {
-				m_onError(ec.message());
+				m_onError(errorMessage);
 			}
 			return false;
 		}
@@ -113,7 +114,8 @@ void WebSocketPPClient::Disconnect()
 		}
 		m_client.close(hdl, websocketpp::close::status::normal, "Closing connection", ec);
 		if (ec) {
-			blog(LOG_ERROR, "[Audio to WebSocket] Error closing connection: %s", ec.message().c_str());
+			std::string errorMessage = ec.message();
+			blog(LOG_ERROR, "[Audio to WebSocket] Error closing connection: %s", errorMessage.c_str());
 		}
 	}
 
@@ -225,11 +227,12 @@ void WebSocketPPClient::SendAudioData(const AudioChunk &chunk)
 		m_client.send(hdl, binaryData.data(), binaryData.size(), websocketpp::frame::opcode::binary, ec);
 
 		if (ec) {
-			blog(LOG_ERROR, "[Audio to WebSocket] Failed to send audio data: %s", ec.message().c_str());
+			std::string errorMessage = ec.message();
+			blog(LOG_ERROR, "[Audio to WebSocket] Failed to send audio data: %s", errorMessage.c_str());
 			// Mark as disconnected on send failure
 			m_connected = false;
 			if (m_onError) {
-				m_onError("Failed to send audio data: " + ec.message());
+				m_onError("Failed to send audio data: " + errorMessage);
 			}
 		}
 	} catch (const websocketpp::exception &e) {
@@ -261,8 +264,9 @@ void WebSocketPPClient::SendControlMessage(const std::string &type)
 		m_client.send(hdl, payload, websocketpp::frame::opcode::text, ec);
 
 		if (ec) {
+			std::string errorMessage = ec.message();
 			blog(LOG_ERROR, "[Audio to WebSocket] Failed to send control message: %s",
-			     ec.message().c_str());
+			     errorMessage.c_str());
 		}
 	} catch (const websocketpp::exception &e) {
 		blog(LOG_ERROR, "[Audio to WebSocket] Exception sending control message: %s", e.what());
@@ -326,12 +330,13 @@ void WebSocketPPClient::OnFail(websocketpp::connection_hdl hdl)
 		ec = con->get_ec();
 	}
 
-	blog(LOG_ERROR, "[Audio to WebSocket] Connection failed: %s (code: %d)", ec.message().c_str(), ec.value());
+	std::string errorMessage = ec.message();
+	blog(LOG_ERROR, "[Audio to WebSocket] Connection failed: %s (code: %d)", errorMessage.c_str(), ec.value());
 	m_connected = false;
 
 	// Only call error callback for initial connection attempts, not during automatic reconnection
 	if (!m_reconnecting && m_onError) {
-		m_onError("Connection failed: " + ec.message());
+		m_onError("Connection failed: " + errorMessage);
 	}
 
 	// Schedule reconnection if enabled
@@ -404,7 +409,8 @@ void WebSocketPPClient::DoReconnect()
 		client::connection_ptr con = m_client.get_connection(m_uri, ec);
 
 		if (ec) {
-			blog(LOG_ERROR, "[Audio to WebSocket] Reconnection failed: %s", ec.message().c_str());
+			std::string errorMessage = ec.message();
+			blog(LOG_ERROR, "[Audio to WebSocket] Reconnection failed: %s", errorMessage.c_str());
 			// Will retry via OnFail callback
 		} else {
 			{

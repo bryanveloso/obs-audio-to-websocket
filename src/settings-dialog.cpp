@@ -400,7 +400,8 @@ void SettingsDialog::showError(const QString &error)
 		// During streaming, just update the status label instead of showing a dialog
 		m_statusLabel->setText("Streaming (Connection Error)");
 		m_statusLabel->setStyleSheet("QLabel { font-weight: bold; color: red; }");
-		blog(LOG_WARNING, "[Audio to WebSocket] Error during streaming: %s", error.toStdString().c_str());
+		std::string errorStdString = error.toStdString();
+		blog(LOG_WARNING, "[Audio to WebSocket] Error during streaming: %s", errorStdString.c_str());
 	}
 }
 
@@ -408,7 +409,8 @@ void SettingsDialog::updateStatus()
 {
 	// Update audio level and mute status
 	if (!m_audioSourceCombo->currentText().isEmpty()) {
-		obs_source_t *source = obs_get_source_by_name(m_audioSourceCombo->currentText().toStdString().c_str());
+		std::string sourceNameStdString = m_audioSourceCombo->currentText().toStdString();
+		obs_source_t *source = obs_get_source_by_name(sourceNameStdString.c_str());
 		if (source) {
 			// Update volume meter attachment
 			if (m_volmeter) {
