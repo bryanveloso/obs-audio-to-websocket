@@ -3,6 +3,7 @@
 #include "obs-audio-to-websocket/constants.hpp"
 #include <obs-module.h>
 #include <nlohmann/json.hpp>
+#include <functional>
 #include <asio/error_code.hpp>
 #include <websocketpp/common/cpp11.hpp>
 #include <websocketpp/close.hpp>
