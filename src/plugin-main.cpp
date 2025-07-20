@@ -13,10 +13,17 @@ void on_frontend_event(enum obs_frontend_event event, void *data)
 
 	switch (event) {
 	case OBS_FRONTEND_EVENT_STREAMING_STARTING:
-		// Could auto-start audio streaming when OBS starts streaming
+		if (obs_audio_to_websocket::AudioStreamer::Instance().IsAutoConnectEnabled()) {
+			blog(LOG_INFO, "[Audio to WebSocket] Auto-connect enabled: Starting audio streaming");
+			obs_audio_to_websocket::AudioStreamer::Instance().Start();
+		}
 		break;
 	case OBS_FRONTEND_EVENT_STREAMING_STOPPING:
-		// Could auto-stop audio streaming when OBS stops streaming
+		if (obs_audio_to_websocket::AudioStreamer::Instance().IsAutoConnectEnabled() &&
+		    obs_audio_to_websocket::AudioStreamer::Instance().IsStreaming()) {
+			blog(LOG_INFO, "[Audio to WebSocket] Auto-connect enabled: Stopping audio streaming");
+			obs_audio_to_websocket::AudioStreamer::Instance().Stop();
+		}
 		break;
 	case OBS_FRONTEND_EVENT_EXIT:
 		obs_audio_to_websocket::AudioStreamer::Instance().Stop();

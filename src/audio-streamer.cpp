@@ -104,6 +104,9 @@ void AudioStreamer::LoadSettings()
 		std::lock_guard<std::recursive_mutex> lock(m_sourceMutex);
 		m_audioSourceName = source;
 	}
+
+	bool autoConnect = config_get_bool(config, "AudioStreamer", "AutoConnect");
+	m_autoConnectEnabled.store(autoConnect);
 }
 
 void AudioStreamer::ConnectToWebSocket()

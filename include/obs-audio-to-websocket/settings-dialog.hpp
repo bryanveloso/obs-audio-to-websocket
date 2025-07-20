@@ -12,6 +12,7 @@ class QPushButton;
 class QComboBox;
 class QLabel;
 class QProgressBar;
+class QCheckBox;
 QT_END_NAMESPACE
 
 namespace obs_audio_to_websocket {
@@ -30,6 +31,7 @@ private slots:
 	void onTestConnection();
 	void onAudioSourceChanged(const QString &source);
 	void onUrlChanged(const QString &url);
+	void onAutoConnectToggled(bool enabled);
 
 	void updateConnectionStatus(bool connected);
 	void updateStreamingStatus(bool streaming);
@@ -55,6 +57,7 @@ private:
 	// UI Elements
 	QLineEdit *m_urlEdit;
 	QPushButton *m_testButton;
+	QCheckBox *m_autoConnectCheckBox;
 	QComboBox *m_audioSourceCombo;
 	QPushButton *m_refreshButton;
 	QPushButton *m_startStopButton;

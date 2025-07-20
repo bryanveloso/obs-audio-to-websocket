@@ -40,6 +40,9 @@ public:
 	void SetAudioSource(const std::string &sourceName);
 	std::string GetAudioSource() const { return m_audioSourceName; }
 
+	void SetAutoConnectEnabled(bool enabled) { m_autoConnectEnabled.store(enabled); }
+	bool IsAutoConnectEnabled() const { return m_autoConnectEnabled.load(); }
+
 	void ShowSettings();
 	void LoadSettings();
 
@@ -85,6 +88,7 @@ private:
 
 	std::atomic<bool> m_streaming{false};
 	std::atomic<bool> m_shuttingDown{false};
+	std::atomic<bool> m_autoConnectEnabled{false};
 	std::atomic<double> m_dataRate{0.0};
 
 	std::recursive_mutex m_sourceMutex;

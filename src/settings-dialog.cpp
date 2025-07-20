@@ -16,6 +16,7 @@
 #include <QMessageBox>
 #include <QCloseEvent>
 #include <QUrl>
+#include <QCheckBox>
 #include <obs.h>
 #include <obs-frontend-api.h>
 
@@ -68,6 +69,9 @@ void SettingsDialog::setupUi()
 
 	m_testButton = new QPushButton("Test Connection", this);
 	connectionLayout->addWidget(m_testButton, 0, 3);
+
+	m_autoConnectCheckBox = new QCheckBox("Auto-connect when streaming starts", this);
+	connectionLayout->addWidget(m_autoConnectCheckBox, 1, 0, 1, 4);
 
 	mainLayout->addWidget(connectionGroup);
 
@@ -145,6 +149,7 @@ void SettingsDialog::connectSignals()
 	connect(m_startStopButton, &QPushButton::clicked, this, &SettingsDialog::onStartStopToggled);
 	connect(m_audioSourceCombo, &QComboBox::currentTextChanged, this, &SettingsDialog::onAudioSourceChanged);
 	connect(m_urlEdit, &QLineEdit::textChanged, this, &SettingsDialog::onUrlChanged);
+	connect(m_autoConnectCheckBox, &QCheckBox::toggled, this, &SettingsDialog::onAutoConnectToggled);
 
 	// Connect to AudioStreamer signals
 	connect(m_streamer, &AudioStreamer::connectionStatusChanged, this, &SettingsDialog::updateConnectionStatus);
@@ -180,6 +185,10 @@ void SettingsDialog::loadSettings()
 			m_startStopButton->setEnabled(true);
 		}
 	}
+
+	bool autoConnect = config_get_bool(config, "AudioStreamer", "AutoConnect");
+	m_autoConnectCheckBox->setChecked(autoConnect);
+	m_streamer->SetAutoConnectEnabled(autoConnect);
 }
 
 void SettingsDialog::saveSettings()
@@ -202,6 +211,7 @@ void SettingsDialog::saveSettings()
 	std::string audioSourceStdString = m_audioSourceCombo->currentText().toStdString();
 	config_set_string(config, "AudioStreamer", "WebSocketUrl", urlStdString.c_str());
 	config_set_string(config, "AudioStreamer", "AudioSource", audioSourceStdString.c_str());
+	config_set_bool(config, "AudioStreamer", "AutoConnect", m_autoConnectCheckBox->isChecked());
 
 	config_save(config);
 }
@@ -311,13 +321,25 @@ void SettingsDialog::onUrlChanged(const QString &url)
 	m_streamer->SetWebSocketUrl(url.toStdString());
 }
 
+void SettingsDialog::onAutoConnectToggled(bool enabled)
+{
+	m_streamer->SetAutoConnectEnabled(enabled);
+	// Update status to reflect auto-connect state
+	updateConnectionStatus(m_streamer->IsConnected());
+}
+
 void SettingsDialog::updateConnectionStatus(bool connected)
 {
 	// Update status based on both connection and streaming state
 	if (m_streamer->IsStreaming()) {
 		if (connected) {
-			m_statusLabel->setText("Streaming (Connected)");
-			m_statusLabel->setStyleSheet("QLabel { font-weight: bold; color: green; }");
+			if (m_streamer->IsAutoConnectEnabled()) {
+				m_statusLabel->setText("Auto-Connect: Active");
+				m_statusLabel->setStyleSheet("QLabel { font-weight: bold; color: green; }");
+			} else {
+				m_statusLabel->setText("Streaming (Connected)");
+				m_statusLabel->setStyleSheet("QLabel { font-weight: bold; color: green; }");
+			}
 		} else {
 			// Check if we're in reconnection phase
 			auto wsClient = m_streamer->GetWebSocketClient();
@@ -332,8 +354,13 @@ void SettingsDialog::updateConnectionStatus(bool connected)
 			}
 		}
 	} else {
-		m_statusLabel->setText("Not Streaming");
-		m_statusLabel->setStyleSheet("QLabel { font-weight: bold; }");
+		if (m_streamer->IsAutoConnectEnabled()) {
+			m_statusLabel->setText("Auto-Connect: Waiting for stream");
+			m_statusLabel->setStyleSheet("QLabel { font-weight: bold; color: blue; }");
+		} else {
+			m_statusLabel->setText("Not Streaming");
+			m_statusLabel->setStyleSheet("QLabel { font-weight: bold; }");
+		}
 	}
 }
 
@@ -341,8 +368,14 @@ void SettingsDialog::updateStreamingStatus(bool streaming)
 {
 	if (streaming) {
 		m_startStopButton->setText("Stop Streaming");
-		// Keep button enabled so user can stop streaming
-		m_startStopButton->setEnabled(true);
+		// Disable manual start/stop when auto-connect is enabled
+		if (m_streamer->IsAutoConnectEnabled()) {
+			m_startStopButton->setEnabled(false);
+			m_startStopButton->setToolTip("Auto-connect is controlling the connection");
+		} else {
+			m_startStopButton->setEnabled(true);
+			m_startStopButton->setToolTip("");
+		}
 		// Disable changing settings while streaming
 		m_audioSourceCombo->setEnabled(false);
 		m_refreshButton->setEnabled(false);
@@ -350,6 +383,7 @@ void SettingsDialog::updateStreamingStatus(bool streaming)
 		m_testButton->setEnabled(false);
 	} else {
 		m_startStopButton->setText("Start Streaming");
+		m_startStopButton->setToolTip("");
 		// Re-enable controls when not streaming
 		m_audioSourceCombo->setEnabled(true);
 		m_refreshButton->setEnabled(true);
