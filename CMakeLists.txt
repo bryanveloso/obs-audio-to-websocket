@@ -39,12 +39,7 @@ if(NOT Websocketpp_FOUND OR NOT Asio_FOUND)
   endif()
 
   if(NOT Websocketpp_FOUND)
-    FetchContent_Declare(
-      websocketpp
-      GIT_REPOSITORY https://github.com/zaphoyd/websocketpp.git
-      GIT_TAG
-        72e2760a4cceef2d270450746ce90efce9374eb8 # 0.8.2 release commit
-    )
+    FetchContent_Declare(websocketpp GIT_REPOSITORY https://github.com/zaphoyd/websocketpp.git GIT_TAG 0.8.2)
   endif()
 
   # Handle Asio first
