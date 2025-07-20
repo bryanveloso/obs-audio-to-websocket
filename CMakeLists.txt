@@ -24,7 +24,6 @@ find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
 
 # Find dependencies
 find_package(nlohmann_json REQUIRED)
-find_package(PkgConfig)
 
 # Try to find WebSocket++ and Asio like obs-websocket does
 find_package(Websocketpp 0.8 QUIET)
