@@ -193,6 +193,30 @@ void SettingsDialog::loadSettings()
 
 void SettingsDialog::saveSettings()
 {
+	// Check UI elements first to prevent null pointer access
+	if (!m_urlEdit) {
+		blog(LOG_ERROR, "[Audio to WebSocket] saveSettings: m_urlEdit is null");
+		QMessageBox::critical(this, "Settings Error",
+				      "Internal error: URL input field is not available. Settings cannot be saved.");
+		return;
+	}
+
+	if (!m_audioSourceCombo) {
+		blog(LOG_ERROR, "[Audio to WebSocket] saveSettings: m_audioSourceCombo is null");
+		QMessageBox::critical(
+			this, "Settings Error",
+			"Internal error: Audio source selection is not available. Settings cannot be saved.");
+		return;
+	}
+
+	if (!m_autoConnectCheckBox) {
+		blog(LOG_ERROR, "[Audio to WebSocket] saveSettings: m_autoConnectCheckBox is null");
+		QMessageBox::critical(
+			this, "Settings Error",
+			"Internal error: Auto-connect checkbox is not available. Settings cannot be saved.");
+		return;
+	}
+
 	// Validate WebSocket URL
 	QString url = m_urlEdit->text().trimmed();
 	if (!url.isEmpty() && !url.startsWith("ws://") && !url.startsWith("wss://")) {
@@ -200,13 +224,22 @@ void SettingsDialog::saveSettings()
 		return;
 	}
 
-	// Save to OBS user config
+	// Get OBS config with null pointer check
 #if LIBOBS_API_MAJOR_VER >= 31
 	config_t *config = obs_frontend_get_user_config();
 #else
 	config_t *config = obs_frontend_get_profile_config();
 #endif
 
+	if (!config) {
+		blog(LOG_ERROR, "[Audio to WebSocket] saveSettings: Failed to get OBS config - config is null");
+		QMessageBox::critical(
+			this, "Settings Error",
+			"Unable to access OBS configuration. Settings cannot be saved. Please ensure OBS is properly initialized.");
+		return;
+	}
+
+	// Save settings with the validated config
 	std::string urlStdString = url.toStdString();
 	std::string audioSourceStdString = m_audioSourceCombo->currentText().toStdString();
 	config_set_string(config, "AudioStreamer", "WebSocketUrl", urlStdString.c_str());
