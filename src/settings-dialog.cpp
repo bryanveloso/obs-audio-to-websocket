@@ -151,6 +151,10 @@ void SettingsDialog::connectSignals()
 	connect(m_urlEdit, &QLineEdit::textChanged, this, &SettingsDialog::onUrlChanged);
 	connect(m_autoConnectCheckBox, &QCheckBox::toggled, this, &SettingsDialog::onAutoConnectToggled);
 
+	// Connect thread-safe test connection error signal
+	connect(this, &SettingsDialog::testConnectionError, this, &SettingsDialog::onTestConnectionError,
+		Qt::QueuedConnection);
+
 	// Connect to AudioStreamer signals
 	connect(m_streamer, &AudioStreamer::connectionStatusChanged, this, &SettingsDialog::updateConnectionStatus);
 	connect(m_streamer, &AudioStreamer::streamingStatusChanged, this, &SettingsDialog::updateStreamingStatus);
@@ -301,12 +305,10 @@ void SettingsDialog::onTestConnection()
 	// Create a temporary WebSocket client for testing
 	auto testClient = std::make_shared<WebSocketPPClient>();
 
-	// Capture error messages
+	// Capture error messages using thread-safe signal
 	QString errorMsg;
-	testClient->SetOnError([&errorMsg](const std::string &error) {
-		errorMsg = QString::fromStdString(error);
-		blog(LOG_WARNING, "[Audio to WebSocket] Test connection error: %s", error.c_str());
-	});
+	testClient->SetOnError(
+		[this](const std::string &error) { emit testConnectionError(QString::fromStdString(error)); });
 
 	testClient->Connect(url.toStdString());
 
@@ -470,6 +472,15 @@ void SettingsDialog::showError(const QString &error)
 		std::string errorStdString = error.toStdString();
 		blog(LOG_WARNING, "[Audio to WebSocket] Error during streaming: %s", errorStdString.c_str());
 	}
+}
+
+void SettingsDialog::onTestConnectionError(const QString &error)
+{
+	// This slot runs on the main thread, so it's safe to access UI elements
+	blog(LOG_WARNING, "[Audio to WebSocket] Test connection error received: %s", error.toStdString().c_str());
+
+	// The error will be handled in the test timeout callback
+	// This just ensures the error message is logged safely
 }
 
 void SettingsDialog::updateStatus()

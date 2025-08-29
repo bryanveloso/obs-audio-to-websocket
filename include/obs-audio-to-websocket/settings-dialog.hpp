@@ -37,9 +37,13 @@ private slots:
 	void updateStreamingStatus(bool streaming);
 	void updateDataRate(double kbps);
 	void showError(const QString &error);
+	void onTestConnectionError(const QString &error);
 
 	void updateStatus();
 	void populateAudioSources();
+
+signals:
+	void testConnectionError(const QString &error);
 
 protected:
 	void closeEvent(QCloseEvent *event) override;
