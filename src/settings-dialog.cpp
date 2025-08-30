@@ -44,11 +44,7 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent), m_streamer(&A
 
 SettingsDialog::~SettingsDialog()
 {
-	if (m_volmeter) {
-		obs_volmeter_remove_callback(m_volmeter, volumeCallback, this);
-		obs_volmeter_destroy(m_volmeter);
-		m_volmeter = nullptr;
-	}
+	cleanupVolumeMeter();
 }
 
 void SettingsDialog::setupUi()
@@ -504,11 +500,7 @@ void SettingsDialog::updateStatus()
 		obs_source_t *source = obs_get_source_by_name(sourceNameStdString.c_str());
 		if (source) {
 			// Update volume meter attachment
-			if (m_volmeter) {
-				obs_volmeter_detach_source(m_volmeter);
-				obs_volmeter_destroy(m_volmeter);
-				m_volmeter = nullptr;
-			}
+			cleanupVolumeMeter();
 
 			// Create and attach new volmeter
 			m_volmeter = obs_volmeter_create(OBS_FADER_LOG);
@@ -545,22 +537,14 @@ void SettingsDialog::updateStatus()
 			m_muteStatusLabel->hide();
 
 			// Clean up volmeter if source not found
-			if (m_volmeter) {
-				obs_volmeter_remove_callback(m_volmeter, volumeCallback, this);
-				obs_volmeter_destroy(m_volmeter);
-				m_volmeter = nullptr;
-			}
+			cleanupVolumeMeter();
 		}
 	} else {
 		m_audioLevelBar->setValue(0);
 		m_muteStatusLabel->hide();
 
 		// Clean up volmeter if no source selected
-		if (m_volmeter) {
-			obs_volmeter_remove_callback(m_volmeter, volumeCallback, this);
-			obs_volmeter_destroy(m_volmeter);
-			m_volmeter = nullptr;
-		}
+		cleanupVolumeMeter();
 	}
 }
 
@@ -649,6 +633,32 @@ void SettingsDialog::selectDefaultMicrophoneSource()
 			return;
 		}
 	}
+}
+
+void SettingsDialog::cleanupVolumeMeter()
+{
+	if (!m_volmeter) {
+		return;
+	}
+
+	try {
+		// Safely remove callback - this can fail if OBS is shutting down
+		obs_volmeter_remove_callback(m_volmeter, volumeCallback, this);
+	} catch (...) {
+		// Log error but continue with cleanup
+		blog(LOG_WARNING, "[Audio to WebSocket] Exception during volume meter callback removal");
+	}
+
+	try {
+		// Destroy the volume meter - this should not fail but be defensive
+		obs_volmeter_destroy(m_volmeter);
+	} catch (...) {
+		// Log error but continue
+		blog(LOG_ERROR, "[Audio to WebSocket] Exception during volume meter destruction");
+	}
+
+	// Always nullify the pointer regardless of cleanup success
+	m_volmeter = nullptr;
 }
 
 void SettingsDialog::volumeCallback(void *data, const float magnitude[MAX_AUDIO_CHANNELS],

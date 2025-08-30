@@ -58,6 +58,8 @@ private:
 	static void volumeCallback(void *data, const float magnitude[MAX_AUDIO_CHANNELS],
 				   const float peak[MAX_AUDIO_CHANNELS], const float inputPeak[MAX_AUDIO_CHANNELS]);
 
+	void cleanupVolumeMeter();
+
 	// UI Elements
 	QLineEdit *m_urlEdit;
 	QPushButton *m_testButton;
