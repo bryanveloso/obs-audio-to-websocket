@@ -195,14 +195,14 @@ void SettingsDialog::loadSettings()
 	m_streamer->SetAutoConnectEnabled(autoConnect);
 }
 
-void SettingsDialog::saveSettings()
+bool SettingsDialog::saveSettings()
 {
 	// Check UI elements first to prevent null pointer access
 	if (!m_urlEdit) {
 		blog(LOG_ERROR, "[Audio to WebSocket] saveSettings: m_urlEdit is null");
 		QMessageBox::critical(this, "Settings Error",
 				      "Internal error: URL input field is not available. Settings cannot be saved.");
-		return;
+		return false;
 	}
 
 	if (!m_audioSourceCombo) {
@@ -210,7 +210,7 @@ void SettingsDialog::saveSettings()
 		QMessageBox::critical(
 			this, "Settings Error",
 			"Internal error: Audio source selection is not available. Settings cannot be saved.");
-		return;
+		return false;
 	}
 
 	if (!m_autoConnectCheckBox) {
@@ -218,14 +218,14 @@ void SettingsDialog::saveSettings()
 		QMessageBox::critical(
 			this, "Settings Error",
 			"Internal error: Auto-connect checkbox is not available. Settings cannot be saved.");
-		return;
+		return false;
 	}
 
 	// Validate WebSocket URL
 	QString url = m_urlEdit->text().trimmed();
 	if (!url.isEmpty() && !url.startsWith("ws://") && !url.startsWith("wss://")) {
 		QMessageBox::warning(this, "Invalid URL", "WebSocket URL must start with ws:// or wss://");
-		return;
+		return false;
 	}
 
 	// Get OBS config with null pointer check
@@ -240,7 +240,7 @@ void SettingsDialog::saveSettings()
 		QMessageBox::critical(
 			this, "Settings Error",
 			"Unable to access OBS configuration. Settings cannot be saved. Please ensure OBS is properly initialized.");
-		return;
+		return false;
 	}
 
 	// Save settings with the validated config
@@ -251,11 +251,24 @@ void SettingsDialog::saveSettings()
 	config_set_bool(config, "AudioStreamer", "AutoConnect", m_autoConnectCheckBox->isChecked());
 
 	config_save(config);
+	return true;
 }
 
 void SettingsDialog::closeEvent(QCloseEvent *event)
 {
-	saveSettings();
+	// Only proceed with closing if settings save successfully or user chooses to ignore
+	if (!saveSettings()) {
+		// Settings save failed - ask user what to do
+		int result = QMessageBox::question(this, "Save Failed",
+						   "Settings could not be saved. Close without saving?",
+						   QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+
+		if (result == QMessageBox::No) {
+			event->ignore(); // Cancel the close event
+			return;
+		}
+	}
+
 	QDialog::closeEvent(event);
 }
 

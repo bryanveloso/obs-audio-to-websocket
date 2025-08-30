@@ -52,7 +52,7 @@ private:
 	void setupUi();
 	void connectSignals();
 	void loadSettings();
-	void saveSettings();
+	bool saveSettings();
 	void selectDefaultMicrophoneSource();
 
 	static void volumeCallback(void *data, const float magnitude[MAX_AUDIO_CHANNELS],
