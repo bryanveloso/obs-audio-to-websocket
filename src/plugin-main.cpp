@@ -60,7 +60,6 @@ bool obs_module_load(void)
 
 void obs_module_unload(void)
 {
-	obs_audio_to_websocket::AudioStreamer::Instance().Stop();
 	obs_frontend_remove_event_callback(on_frontend_event, nullptr);
 
 	blog(LOG_INFO, "[Audio to WebSocket] Plugin unloaded");

@@ -14,7 +14,6 @@
 #include <QLabel>
 #include <QProgressBar>
 #include <QMessageBox>
-#include <QCloseEvent>
 #include <QUrl>
 #include <QCheckBox>
 #include <obs.h>
@@ -193,38 +192,12 @@ void SettingsDialog::loadSettings()
 
 bool SettingsDialog::saveSettings()
 {
-	// Check UI elements first to prevent null pointer access
-	if (!m_urlEdit) {
-		blog(LOG_ERROR, "[Audio to WebSocket] saveSettings: m_urlEdit is null");
-		QMessageBox::critical(this, "Settings Error",
-				      "Internal error: URL input field is not available. Settings cannot be saved.");
+	// Silently fail if UI elements don't exist yet
+	if (!m_urlEdit || !m_audioSourceCombo || !m_autoConnectCheckBox) {
 		return false;
 	}
 
-	if (!m_audioSourceCombo) {
-		blog(LOG_ERROR, "[Audio to WebSocket] saveSettings: m_audioSourceCombo is null");
-		QMessageBox::critical(
-			this, "Settings Error",
-			"Internal error: Audio source selection is not available. Settings cannot be saved.");
-		return false;
-	}
-
-	if (!m_autoConnectCheckBox) {
-		blog(LOG_ERROR, "[Audio to WebSocket] saveSettings: m_autoConnectCheckBox is null");
-		QMessageBox::critical(
-			this, "Settings Error",
-			"Internal error: Auto-connect checkbox is not available. Settings cannot be saved.");
-		return false;
-	}
-
-	// Validate WebSocket URL
-	QString url = m_urlEdit->text().trimmed();
-	if (!url.isEmpty() && !url.startsWith("ws://") && !url.startsWith("wss://")) {
-		QMessageBox::warning(this, "Invalid URL", "WebSocket URL must start with ws:// or wss://");
-		return false;
-	}
-
-	// Get OBS config with null pointer check
+	// Get OBS config
 #if LIBOBS_API_MAJOR_VER >= 31
 	config_t *config = obs_frontend_get_user_config();
 #else
@@ -232,15 +205,13 @@ bool SettingsDialog::saveSettings()
 #endif
 
 	if (!config) {
-		blog(LOG_ERROR, "[Audio to WebSocket] saveSettings: Failed to get OBS config - config is null");
-		QMessageBox::critical(
-			this, "Settings Error",
-			"Unable to access OBS configuration. Settings cannot be saved. Please ensure OBS is properly initialized.");
+		// OBS not available (shutting down?), silently fail
+		blog(LOG_WARNING, "[Audio to WebSocket] Cannot save settings - OBS config not available");
 		return false;
 	}
 
-	// Save settings with the validated config
-	std::string urlStdString = url.toStdString();
+	// Save settings
+	std::string urlStdString = m_urlEdit->text().trimmed().toStdString();
 	std::string audioSourceStdString = m_audioSourceCombo->currentText().toStdString();
 	config_set_string(config, "AudioStreamer", "WebSocketUrl", urlStdString.c_str());
 	config_set_string(config, "AudioStreamer", "AudioSource", audioSourceStdString.c_str());
@@ -248,24 +219,6 @@ bool SettingsDialog::saveSettings()
 
 	config_save(config);
 	return true;
-}
-
-void SettingsDialog::closeEvent(QCloseEvent *event)
-{
-	// Only proceed with closing if settings save successfully or user chooses to ignore
-	if (!saveSettings()) {
-		// Settings save failed - ask user what to do
-		int result = QMessageBox::question(this, "Save Failed",
-						   "Settings could not be saved. Close without saving?",
-						   QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-
-		if (result == QMessageBox::No) {
-			event->ignore(); // Cancel the close event
-			return;
-		}
-	}
-
-	QDialog::closeEvent(event);
 }
 
 void SettingsDialog::onStartStopToggled()
@@ -358,11 +311,15 @@ void SettingsDialog::onAudioSourceChanged(const QString &source)
 	if (!m_streamer->IsStreaming()) {
 		m_startStopButton->setEnabled(!source.isEmpty());
 	}
+	// Save settings immediately
+	saveSettings();
 }
 
 void SettingsDialog::onUrlChanged(const QString &url)
 {
 	m_streamer->SetWebSocketUrl(url.toStdString());
+	// Save settings immediately
+	saveSettings();
 }
 
 void SettingsDialog::onAutoConnectToggled(bool enabled)
@@ -370,6 +327,8 @@ void SettingsDialog::onAutoConnectToggled(bool enabled)
 	m_streamer->SetAutoConnectEnabled(enabled);
 	// Update status to reflect auto-connect state
 	updateConnectionStatus(m_streamer->IsConnected());
+	// Save settings immediately
+	saveSettings();
 }
 
 void SettingsDialog::updateConnectionStatus(bool connected)

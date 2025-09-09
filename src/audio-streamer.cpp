@@ -79,9 +79,15 @@ void AudioStreamer::ShowSettings()
 	if (!m_settingsDialog) {
 		m_settingsDialog = std::make_unique<SettingsDialog>();
 	}
-	m_settingsDialog->show();
-	m_settingsDialog->raise();
-	m_settingsDialog->activateWindow();
+
+	// Toggle visibility if already open
+	if (m_settingsDialog->isVisible()) {
+		m_settingsDialog->hide();
+	} else {
+		m_settingsDialog->show();
+		m_settingsDialog->raise();
+		m_settingsDialog->activateWindow();
+	}
 }
 
 void AudioStreamer::LoadSettings()

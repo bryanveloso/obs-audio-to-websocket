@@ -8,6 +8,7 @@ A lightweight OBS Studio plugin that streams real-time audio data from OBS sourc
 
 - Stream audio from any OBS audio source to WebSocket endpoints
 - Automatic reconnection with exponential backoff
+- Auto-connect on OBS startup (optional setting)
 - Binary protocol for efficient audio data transmission
 - Real-time connection status and data rate monitoring
 - Simple UI integrated into OBS Tools menu
@@ -120,8 +121,25 @@ The project includes GitHub Actions workflows for automated building:
 2. Go to Tools → Audio to WebSocket Settings
 3. Configure the WebSocket endpoint (default: `ws://localhost:8889/audio`)
 4. Select your audio source
-5. Click "Connect" to establish WebSocket connection
-6. Click "Start Streaming" to begin audio streaming
+5. (Optional) Enable "Auto-Connect on Startup" to automatically start streaming when OBS launches
+6. Click "Connect" to establish WebSocket connection
+7. Click "Start Streaming" to begin audio streaming
+
+### Auto-Connect Feature
+
+The auto-connect feature allows the plugin to automatically establish a WebSocket connection and begin streaming whenever OBS starts up. This is useful for automated setups where you want audio streaming to begin without manual intervention.
+
+To enable auto-connect:
+1. Open Tools → Audio to WebSocket Settings
+2. Check the "Auto-Connect on Startup" checkbox
+3. Click "Save" or close the dialog
+
+When enabled, the plugin will:
+- Automatically connect to the configured WebSocket URL on OBS startup
+- Begin streaming audio from the selected source immediately
+- Show connection status in the OBS log
+
+**Note**: Auto-connect only works if you have previously configured a valid WebSocket URL and audio source.
 
 ## WebSocket Protocol
 
@@ -253,6 +271,7 @@ The plugin also sends JSON control messages:
 Settings are automatically saved in OBS configuration:
 - WebSocket URL (default: `ws://localhost:8889/audio`)
 - Selected audio source
+- Auto-connect on startup setting
 - Connection state is maintained across OBS restarts
 
 ## Troubleshooting

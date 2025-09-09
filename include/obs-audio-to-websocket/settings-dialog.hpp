@@ -45,9 +45,6 @@ private slots:
 signals:
 	void testConnectionError(const QString &error);
 
-protected:
-	void closeEvent(QCloseEvent *event) override;
-
 private:
 	void setupUi();
 	void connectSignals();
